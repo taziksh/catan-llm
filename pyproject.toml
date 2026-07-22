@@ -1,0 +1,27 @@
+[project]
+name = "catan-llm"
+version = "0.1.0"
+description = "LLM agents for Settlers of Catan via the catanatron engine"
+requires-python = ">=3.13"
+dependencies = [
+    "catanatron",
+    "pydantic>=2.13.4",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["catan_llm"]
+
+[tool.uv]
+package = true
+
+[tool.uv.sources]
+catanatron = { git = "https://github.com/bcollazo/catanatron.git", rev = "d3f4ad05bb78d8b2309631d6d3cfa8fcb6fda816" }
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
