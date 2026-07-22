@@ -1,12 +1,11 @@
 """Plays bot games and writes one trajectory JSONL file per game."""
 
 import argparse
-import os
-import sys
 
 from catanatron import Game
 
 from catan_llm.bots import BOTS, COLORS
+from catan_llm.determinism import require_fixed_hashseed
 from catan_llm.extract import TrajectoryAccumulator, deterministic_game_id
 
 
@@ -32,9 +31,5 @@ def main():
 
 
 if __name__ == "__main__":
-    if os.environ.get("PYTHONHASHSEED") != "0":
-        # Hash randomization must be off before interpreter start for
-        # reproducible games, so re-exec with it set.
-        env = {**os.environ, "PYTHONHASHSEED": "0"}
-        os.execve(sys.executable, [sys.executable, *sys.argv], env)
+    require_fixed_hashseed()
     main()
