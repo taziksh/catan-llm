@@ -24,4 +24,5 @@ catanatron = { git = "https://github.com/bcollazo/catanatron.git", rev = "d3f4ad
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
+    "seaborn>=0.13.2",
 ]
