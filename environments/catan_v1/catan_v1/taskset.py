@@ -17,6 +17,7 @@ from catanatron.state_functions import get_actual_victory_points
 from pydantic import Field
 
 from catan_llm.bots import BOTS, COLORS
+from catan_llm.determinism import check_fixed_hashseed
 from catan_llm.extract import TrajectoryAccumulator, deterministic_game_id, observe_live
 from catan_llm.parse import parse_answer
 from catan_llm.serialize import observation_to_prompt
@@ -52,6 +53,7 @@ class CatanEnvConfig(vf.EnvConfig):
 
 class CatanEnv(vf.Env[CatanEnvConfig]):
     async def run(self, task, agents):
+        check_fixed_hashseed()
         seed = task.data.info["seed"]
         seat_kinds = self.config.seats.split(",")
         engine_players = [
