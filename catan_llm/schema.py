@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 SCHEMA_VERSION = 1
 
-# vendor/catanatron @ d3f4ad05bb78d8b2309631d6d3cfa8fcb6fda816, installed from source.
+# catanatron @ d3f4ad05bb78d8b2309631d6d3cfa8fcb6fda816, installed from git source.
 ENGINE_VERSION = "catanatron-3.3.0+d3f4ad0"
 
 

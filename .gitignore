@@ -5,6 +5,5 @@ __pycache__/
 dist/
 .DS_Store
 data/
-vendor/
 .env
 outputs/
