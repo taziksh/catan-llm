@@ -41,10 +41,10 @@ class CatanData(vf.TaskData):
 
 class CatanEnvConfig(vf.EnvConfig):
     seats: str = "agent,value_function,value_function,value_function"  # per seat: "agent" | BOTS key
-    player0: vf.AgentConfig = vf.AgentConfig(harness={"id": "null"})
-    player1: vf.AgentConfig = vf.AgentConfig(harness={"id": "null"})
-    player2: vf.AgentConfig = vf.AgentConfig(harness={"id": "null"})
-    player3: vf.AgentConfig = vf.AgentConfig(harness={"id": "null"})
+    player0: vf.AgentConfig = vf.AgentConfig(harness={"id": "catan_v1_harness"})
+    player1: vf.AgentConfig = vf.AgentConfig(harness={"id": "catan_v1_harness"})
+    player2: vf.AgentConfig = vf.AgentConfig(harness={"id": "catan_v1_harness"})
+    player3: vf.AgentConfig = vf.AgentConfig(harness={"id": "catan_v1_harness"})
     invalid_retries: int = Field(1, ge=0)
     vp_coef: float = 0.1  # weight of reward_vp = min(vps, 10) / 10
     trajectory_dir: str | None = None
@@ -72,7 +72,8 @@ class CatanEnv(vf.Env[CatanEnvConfig]):
 
         async def ask(interaction, seat):
             n = len(game.playable_actions)
-            prompt = observation_to_prompt(observe_live(game))
+            state = observation_to_prompt(observe_live(game))
+            prompt = state
             for _ in range(self.config.invalid_retries + 1):
                 try:
                     segment = await interaction.turn(prompt)
@@ -84,9 +85,11 @@ class CatanEnv(vf.Env[CatanEnvConfig]):
                 index = parse_answer(segment.last_reply or "", n)
                 if index is not None:
                     return game.playable_actions[index]
+                # The stateless harness drops history, so a retry restates the
+                # full state alongside the complaint.
                 prompt = (
-                    "That was not a valid answer. Reply with "
-                    f'"answer: <option number>" between 0 and {n - 1}.'
+                    "Your last reply had no valid answer. Reply with "
+                    f'"answer: <option number>" between 0 and {n - 1}.\n\n{state}'
                 )
             invalid[seat] += 1
             return rng.choice(game.playable_actions)
