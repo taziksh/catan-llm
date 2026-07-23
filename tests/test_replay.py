@@ -1,16 +1,8 @@
 """Replay verifier: re-executes a logged game and checks every record."""
 
-import pytest
-from catanatron import Color, Game, RandomPlayer
-from catanatron.players.minimax import AlphaBetaPlayer
+from conftest import log_game
 
-from catan_llm.extract import (
-    TrajectoryAccumulator,
-    deterministic_game_id,
-)
-from catan_llm.schema import ActionType, DecisionRecord, DevCard, GameRecord, Phase, Resource
-
-SEED = 7
+from catan_llm.schema import ActionType, DevCard, Phase, Resource
 
 # Phases where the legal action types are fully determined by the phase.
 PHASE_ACTIONS = {
@@ -21,33 +13,8 @@ PHASE_ACTIONS = {
 }
 
 
-def _players():
-    return [RandomPlayer(Color.RED), AlphaBetaPlayer(Color.BLUE)]
-
-
-def _log_game(out_dir):
-    game = Game(_players(), seed=SEED)
-    game.id = deterministic_game_id(game)
-    accumulator = TrajectoryAccumulator(out_dir)
-    game.play(accumulators=[accumulator])
-    return accumulator.path
-
-
-@pytest.fixture(scope="module")
-def logged_path(tmp_path_factory):
-    return _log_game(tmp_path_factory.mktemp("log"))
-
-
-@pytest.fixture(scope="module")
-def trajectory(logged_path):
-    lines = logged_path.read_text().splitlines()
-    return GameRecord.model_validate_json(lines[0]), [
-        DecisionRecord.model_validate_json(line) for line in lines[1:]
-    ]
-
-
 def test_replay_matches_log(logged_path, tmp_path_factory):
-    replay_path = _log_game(tmp_path_factory.mktemp("replay"))
+    replay_path = log_game(tmp_path_factory.mktemp("replay"))
     logged = logged_path.read_text().splitlines()
     replayed = replay_path.read_text().splitlines()
     assert len(logged) == len(replayed)
