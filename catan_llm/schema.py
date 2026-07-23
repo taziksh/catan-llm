@@ -11,8 +11,9 @@ from pydantic import BaseModel
 
 SCHEMA_VERSION = 1
 
-# catanatron @ d3f4ad05bb78d8b2309631d6d3cfa8fcb6fda816, installed from git source.
-ENGINE_VERSION = "catanatron-3.3.0+d3f4ad0"
+# taziksh/catanatron @ 89e9397 (fork of d3f4ad0 with per-game rng; streams
+# are seed-identical to the parent rev), installed from git source.
+ENGINE_VERSION = "catanatron-3.3.0+89e9397"
 
 
 class Player(str, Enum):

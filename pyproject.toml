@@ -22,7 +22,9 @@ package = true
 members = ["environments/catan_v1"]
 
 [tool.uv.sources]
-catanatron = { git = "https://github.com/bcollazo/catanatron.git", rev = "d3f4ad05bb78d8b2309631d6d3cfa8fcb6fda816" }
+# Fork of bcollazo/catanatron d3f4ad0 with per-game rng (stream-identical
+# per seed; safe under concurrent games). Upstream PR: bcollazo/catanatron#380.
+catanatron = { git = "https://github.com/taziksh/catanatron.git", rev = "89e9397e05ed02d56c911f90ca199a0e382c2eb4" }
 
 [dependency-groups]
 dev = [
