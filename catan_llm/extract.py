@@ -22,6 +22,7 @@ from catanatron.state_functions import (
     get_visible_victory_points,
 )
 
+from catan_llm.observe import Observation, opponent_view
 from catan_llm.schema import (
     Action,
     ActionType,
@@ -84,19 +85,15 @@ def _to_action(action, catan_map: CatanMap) -> Action:
     return (action_type, payload)
 
 
-def decision_record(game: Game, action, i: int) -> DecisionRecord:
-    """Builds a DecisionRecord from a game right before `action` is applied."""
-    state = game.state
+def _board_snapshot(state) -> Board:
     catan_map = state.board.map
-
     # Roads are stored in both directions; keep u < v.
     roads = []
     for (u, v), color in state.board.roads.items():
         if u < v:
             assert state.board.roads[(v, u)] == color
             roads.append((u, v, Player(color.value)))
-
-    board = Board(
+    return Board(
         buildings=[
             (node, Player(color.value), Building(kind))
             for node, (color, kind) in sorted(state.board.buildings.items())
@@ -105,6 +102,8 @@ def decision_record(game: Game, action, i: int) -> DecisionRecord:
         robber=catan_map.land_tiles[state.board.robber_coordinate].id,
     )
 
+
+def _players_snapshot(state) -> dict:
     largest_army_color, _ = get_largest_army(state)
     players = {}
     for color in state.colors:
@@ -127,7 +126,20 @@ def decision_record(game: Game, action, i: int) -> DecisionRecord:
             has_longest_road=get_longest_road_color(state) == color,
             has_largest_army=largest_army_color == color,
         )
+    return players
 
+
+def _bank_snapshot(state) -> Bank:
+    return Bank(
+        resources={Resource(r): n for r, n in zip(RESOURCES, state.resource_freqdeck)},
+        dev_cards_left=len(state.development_listdeck),
+    )
+
+
+def decision_record(game: Game, action, i: int) -> DecisionRecord:
+    """Builds a DecisionRecord from a game right before `action` is applied."""
+    state = game.state
+    catan_map = state.board.map
     legal_actions = [_to_action(a, catan_map) for a in game.playable_actions]
     try:
         chosen_action = game.playable_actions.index(action)
@@ -145,24 +157,39 @@ def decision_record(game: Game, action, i: int) -> DecisionRecord:
         turn=state.num_turns,
         phase=Phase(state.current_prompt.value),
         actor=Player(state.current_color().value),
-        board=board,
-        players=players,
-        bank=Bank(
-            resources={
-                Resource(r): n for r, n in zip(RESOURCES, state.resource_freqdeck)
-            },
-            dev_cards_left=len(state.development_listdeck),
-        ),
+        board=_board_snapshot(state),
+        players=_players_snapshot(state),
+        bank=_bank_snapshot(state),
         legal_actions=legal_actions,
         chosen_action=chosen_action,
     )
 
 
-def game_record(game: Game, trading: bool = False) -> GameRecord:
-    """Builds a GameRecord from a finished game."""
+def observe_live(game: Game, trading: bool = False) -> Observation:
+    """Actor's observation of the pending decision in a live game."""
     state = game.state
     catan_map = state.board.map
+    players = _players_snapshot(state)
+    actor = Player(state.current_color().value)
+    return Observation(
+        actor=actor,
+        turn=state.num_turns,
+        phase=Phase(state.current_prompt.value),
+        turn_order=list(players),
+        vps_to_win=game.vps_to_win,
+        trading=trading,
+        layout=_layout_snapshot(catan_map),
+        board=_board_snapshot(state),
+        you=players[actor],
+        opponents=[
+            opponent_view(color, ps) for color, ps in players.items() if color != actor
+        ],
+        bank=_bank_snapshot(state),
+        legal_actions=[_to_action(a, catan_map) for a in game.playable_actions],
+    )
 
+
+def _layout_snapshot(catan_map: CatanMap) -> Layout:
     tiles = [
         Tile(id=t.id, resource=t.resource, number=t.number)
         for t in sorted(catan_map.land_tiles.values(), key=lambda t: t.id)
@@ -172,14 +199,24 @@ def game_record(game: Game, trading: bool = False) -> GameRecord:
         a_ref, b_ref = PORT_DIRECTION_TO_NODEREFS[port.direction]
         nodes = sorted((port.nodes[a_ref], port.nodes[b_ref]))
         ports.append(Port(resource=port.resource, nodes=tuple(nodes)))
+    return Layout(tiles=tiles, ports=ports)
 
+
+def game_record(game: Game, trading: bool = False) -> GameRecord:
+    """Builds a GameRecord from a finished game."""
+    state = game.state
+    catan_map = state.board.map
     winner = game.winning_color()
     return GameRecord(
         game_id=game.id,
         seed=game.seed,
-        config=GameConfig(vps_to_win=game.vps_to_win, trading=trading),
+        config=GameConfig(
+            vps_to_win=game.vps_to_win,
+            trading=trading,
+            discard_limit=state.discard_limit,
+        ),
         seats={Player(p.color.value): _bot_name(p) for p in state.players},
-        layout=Layout(tiles=tiles, ports=ports),
+        layout=_layout_snapshot(catan_map),
         outcome=Outcome(
             winner=Player(winner.value) if winner is not None else None,
             final_vps={

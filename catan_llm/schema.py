@@ -106,6 +106,7 @@ class Layout(BaseModel):
 class GameConfig(BaseModel):
     vps_to_win: int
     trading: bool
+    discard_limit: int = 7
 
 
 class Outcome(BaseModel):

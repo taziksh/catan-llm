@@ -35,6 +35,7 @@ class Observation(BaseModel):
     actor: Player
     turn: int
     phase: Phase
+    turn_order: list[Player]  # seating order, cyclic
     vps_to_win: int
     trading: bool
     layout: Layout
@@ -45,18 +46,22 @@ class Observation(BaseModel):
     legal_actions: list[Action]
 
 
+def opponent_view(color: Player, ps: PlayerState) -> OpponentView:
+    return OpponentView(
+        color=color,
+        card_count=sum(ps.hand.values()),
+        dev_card_count=sum(ps.devs_in_hand.values()),
+        devs_played=ps.devs_played,
+        vps_public=ps.vps_public,
+        road_len=ps.road_len,
+        has_longest_road=ps.has_longest_road,
+        has_largest_army=ps.has_largest_army,
+    )
+
+
 def observe(game: GameRecord, decision: DecisionRecord) -> Observation:
     opponents = [
-        OpponentView(
-            color=color,
-            card_count=sum(ps.hand.values()),
-            dev_card_count=sum(ps.devs_in_hand.values()),
-            devs_played=ps.devs_played,
-            vps_public=ps.vps_public,
-            road_len=ps.road_len,
-            has_longest_road=ps.has_longest_road,
-            has_largest_army=ps.has_largest_army,
-        )
+        opponent_view(color, ps)
         for color, ps in decision.players.items()
         if color != decision.actor
     ]
@@ -64,6 +69,7 @@ def observe(game: GameRecord, decision: DecisionRecord) -> Observation:
         actor=decision.actor,
         turn=decision.turn,
         phase=decision.phase,
+        turn_order=list(decision.players),
         vps_to_win=game.config.vps_to_win,
         trading=game.config.trading,
         layout=game.layout,

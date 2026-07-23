@@ -167,6 +167,9 @@ def observation_to_prompt(obs: Observation) -> str:
     lines = [
         intro,
         f"turn {obs.turn} | phase: {obs.phase.value}",
+        "turn order: " + " -> ".join(
+            f"{p.value} (you)" if p == obs.actor else p.value for p in obs.turn_order
+        ),
         "",
         *_board_lines(obs, tiles),
         "",

@@ -23,3 +23,5 @@ def test_observe(trajectory):
             assert opp.dev_card_count == sum(truth.devs_in_hand.values())
             assert opp.vps_public == truth.vps_public
         assert obs.legal_actions == rec.legal_actions
+        assert obs.turn_order == list(rec.players)
+        assert obs.actor in obs.turn_order

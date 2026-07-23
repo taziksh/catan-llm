@@ -13,6 +13,7 @@ def test_prompt_structure(trajectory):
         assert f"\n{i}. " in prompt
     assert 'Reply with "answer: <option number>".' in prompt
     assert "No trading between players" in prompt
+    assert f"turn order: " in prompt and f"{rec.actor.value} (you)" in prompt
 
 
 def test_info_set(trajectory):
