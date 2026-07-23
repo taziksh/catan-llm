@@ -11,6 +11,7 @@ from catan_llm.bots import BOTS, COLORS
 from catan_llm.determinism import require_fixed_hashseed
 from catan_llm.extract import TrajectoryAccumulator
 from catan_llm.schema import ActionType, Building, DecisionRecord, GameRecord
+from catan_llm.serialize import decision_to_prompt
 
 
 def replay_lines(game_rec):
@@ -95,6 +96,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("file")
     parser.add_argument("--no-verify", action="store_true")
+    parser.add_argument("--prompt", action="store_true", help="show the model prompt")
     parser.add_argument("--check", action="store_true", help="verify all, no stepping")
     args = parser.parse_args()
 
@@ -128,7 +130,10 @@ def main():
         verify_status = None
         if replayed:
             verify_status = "ok" if replayed[i + 1] == lines[i + 1] else "MISMATCH"
-        show_decision(decisions[i], game_rec.seats, verify_status)
+        if args.prompt:
+            print(decision_to_prompt(game_rec, decisions[i]))
+        else:
+            show_decision(decisions[i], game_rec.seats, verify_status)
         try:
             key = input("[enter]=next, <i>=jump, q=quit> ").strip()
         except EOFError:
