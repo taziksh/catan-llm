@@ -18,6 +18,9 @@ packages = ["catan_llm"]
 [tool.uv]
 package = true
 
+[tool.uv.workspace]
+members = ["environments/catan_v1"]
+
 [tool.uv.sources]
 catanatron = { git = "https://github.com/bcollazo/catanatron.git", rev = "d3f4ad05bb78d8b2309631d6d3cfa8fcb6fda816" }
 

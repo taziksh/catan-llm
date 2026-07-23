@@ -1,0 +1,17 @@
+[project]
+name = "catan-v1"
+version = "0.1.0"
+description = "Seeded Settlers of Catan against scripted bots or in self-play"
+requires-python = ">=3.13"
+dependencies = ["verifiers", "catan-llm"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["catan_v1"]
+
+[tool.uv.sources]
+catan-llm = { workspace = true }
+verifiers = { git = "https://github.com/PrimeIntellect-ai/verifiers.git" }
