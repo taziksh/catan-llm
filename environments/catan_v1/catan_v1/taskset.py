@@ -51,6 +51,26 @@ class CatanEnvConfig(vf.EnvConfig):
 
 
 class CatanEnv(vf.Env[CatanEnvConfig]):
+    def __init__(self, config):
+        super().__init__(config)
+        self._baselines = {}
+
+    def _expert_baseline(self, seed, seat_kinds):
+        """VPs per color with alpha_beta replacing every agent seat, same seed."""
+        key = (seed, ",".join(seat_kinds))
+        if key not in self._baselines:
+            players = [
+                BOTS["alpha_beta"](COLORS[i]) if kind == "agent" else BOTS[kind](COLORS[i])
+                for i, kind in enumerate(seat_kinds)
+            ]
+            game = Game(players, seed=seed)
+            game.play()
+            self._baselines[key] = {
+                color: get_actual_victory_points(game.state, color)
+                for color in game.state.colors
+            }
+        return self._baselines[key]
+
     async def run(self, task, agents):
         seed = task.data.info["seed"]
         seat_kinds = self.config.seats.split(",")
@@ -122,6 +142,7 @@ class CatanEnv(vf.Env[CatanEnvConfig]):
         if accumulator:
             accumulator.after(game)
         winner = game.winning_color()
+        baseline = self._expert_baseline(seed, seat_kinds) if interactions else None
         for i, interaction in interactions.items():
             color = engine_players[i].color
             vps = get_actual_victory_points(game.state, color)
@@ -132,9 +153,11 @@ class CatanEnv(vf.Env[CatanEnvConfig]):
             trace.record_metric("truncated", float(winner is None))
             trace.record_metric("game_length", float(game.state.num_turns))
             trace.record_metric("decisions", float(asked[i]))
+            trace.record_metric("vp_vs_expert", vps / max(baseline[color], 1))
             trace.info["catan"] = {
                 "seat": i,
                 "color": color.value,
+                "turn_position": game.state.colors.index(color),
                 "game_id": game.id,
                 "seed": seed,
                 "turns": game.state.num_turns,
