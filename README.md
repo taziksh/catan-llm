@@ -40,13 +40,17 @@ How does the model know it's doing well? Win/lose is too sparse and delayed of a
 `reward_vp: min(vps, 10) / 10` # weight 0.1
 
 We normalize the `reward_vp` term, and downweight it, so that the model doesn't learn to score games with lots of victory points, but overall loss too highly.
-Not all games are equally difficult. To compare fairly, we plan to normalize relative to the performance of an *expert* Catan agent, replaying the same seat (+ deterministic seed).
+Not all games are equally difficult. To compare fairly, we plan to normalize relative to the performance of an *expert* Catan agent, replaying the same seat (+ deterministic seed). This is left for future work.
 
 
 We also log diagnostic data with weight `0`:
-`invalid_rate, truncated, game_length`
+`invalid_rate, truncated, game_length, decisions, rank, vp_margin`
+
+`vp_margin` is the relative difference in VPs of our model against the best opponent vp, operationalized as `(agent_vps - max(opponent_vps)) / 10`
 
 `truncated` games keep their reward_vp, only reward_win is 0.
+
+We err towards logging more metrics at this point, to gain a more granular understanding of failure modes. Not all of these will make their way into the final reward.
 
 
 
