@@ -2,12 +2,14 @@
 
 import argparse
 import json
+import re
 from math import sqrt
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
+from matplotlib.ticker import FuncFormatter, LogLocator
 
 sns.set_theme(style="whitegrid", font="Helvetica Neue", font_scale=1.05)
 
@@ -116,11 +118,64 @@ def decision_latency(profile_path, out):
     plt.close()
 
 
+def costs_scatter(costs_path, out):
+    rows = []
+    for line in Path(costs_path).read_text().splitlines():
+        cells = [c.strip() for c in line.split("|")[1:-1]]
+        if len(cells) != 5 or not cells[0].isdigit():
+            continue
+        score = re.search(r"\d+(?:\.\d+)?", cells[2])
+        cost = re.search(r"\d+(?:\.\d+)?", cells[4])
+        if score and cost:
+            rows.append({"model": cells[1], "score": float(score.group()),
+                         "cost": float(cost.group())})
+    df = pd.DataFrame(rows).sort_values(["cost", "score"], ascending=[True, False])
+    on_frontier = df["score"] > df["score"].cummax().shift(fill_value=-1.0)
+
+    plt.figure(figsize=(10, 6.5))
+    frontier = df[on_frontier]
+    plt.step(frontier["cost"], frontier["score"], where="post",
+             color="#eb6834", lw=1, ls="--", zorder=1)
+    plt.scatter(df.loc[~on_frontier, "cost"], df.loc[~on_frontier, "score"],
+                color="#2a78d6", s=55, zorder=2)
+    plt.scatter(frontier["cost"], frontier["score"],
+                color="#eb6834", s=55, zorder=3, label="cost-efficient frontier")
+    # (dx, dy, ha) for the crowded mid-band; others alternate above/below.
+    nudge = {
+        "MiniMax M3": (-6, 3, "right"),
+        "MiMo-V2.5-Pro": (0, -13, "center"),
+        "GPT-5.6 Luna": (-6, -2, "right"),
+        "Muse Spark 1.1": (0, -13, "center"),
+        "GLM-5.2": (2, 7, "left"),
+        "Qwen3.7-Max": (-6, 3, "right"),
+        "Gemini 3.6 Flash": (0, -13, "center"),
+        "Gemini 3.5 Flash": (6, -2, "left"),
+        "DeepSeek V4 Pro": (0, -13, "center"),
+        "Qwen3.5-397B-A17B": (2, 7, "left"),
+    }
+    for i, r in enumerate(df.itertuples()):
+        dx, dy, ha = nudge.get(r.model, (5, 4, "left") if i % 2 else (5, -10, "left"))
+        plt.annotate(r.model, (r.cost, r.score), fontsize=7.5, ha=ha,
+                     textcoords="offset points", xytext=(dx, dy))
+    plt.xscale("log")
+    ax = plt.gca()
+    ax.xaxis.set_major_locator(LogLocator(subs=(1, 2, 5)))
+    ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: f"${v:g}"))
+    plt.xlabel("estimated cost per game (log)")
+    plt.ylabel("AA Intelligence Index")
+    plt.title("Model intelligence vs cost per game (500K in / 50K out)")
+    plt.legend(loc="lower right")
+    plt.tight_layout()
+    plt.savefig(out / "costs_scatter.png", dpi=150)
+    plt.close()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--benchmark", default="data/benchmarks/roundrobin_s0_n100.json")
     parser.add_argument("--profile", default="data/benchmarks/profile.json")
     parser.add_argument("--games", default="data/games")
+    parser.add_argument("--costs", default="costs.md")
     parser.add_argument("--out", default="data/plots")
     args = parser.parse_args()
 
@@ -133,6 +188,8 @@ def main():
     turns_per_pair(bench, out)
     if Path(args.profile).exists():
         decision_latency(args.profile, out)
+    if Path(args.costs).exists():
+        costs_scatter(args.costs, out)
     print(f"-> {out}")
 
 
