@@ -3,6 +3,9 @@
 import os
 import sys
 
+EVAL_SEED_LIMIT = 10_000
+"""Seeds below this are reserved for evaluation; training seeds start here."""
+
 
 def require_fixed_hashseed():
     """Re-execs with PYTHONHASHSEED=0; it must be set before interpreter start."""

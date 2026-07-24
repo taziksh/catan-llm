@@ -5,7 +5,7 @@ import argparse
 from catanatron import Game
 
 from catan_llm.bots import BOTS, COLORS
-from catan_llm.determinism import require_fixed_hashseed
+from catan_llm.determinism import EVAL_SEED_LIMIT, require_fixed_hashseed
 from catan_llm.extract import TrajectoryAccumulator, deterministic_game_id
 
 
@@ -13,7 +13,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--players", default="alpha_beta,random")
     parser.add_argument("--games", type=int, default=1)
-    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=EVAL_SEED_LIMIT,
+        help="first seed; seeds below %(default)s are reserved for the "
+        "catan-v1 eval taskset",
+    )
     parser.add_argument("--out", default="data/games")
     args = parser.parse_args()
 

@@ -6,7 +6,6 @@ self-contained state prompt per decision and answer with an option index.
 
 import random
 from contextlib import AsyncExitStack
-from itertools import count
 from typing import Iterator
 
 import verifiers.v1 as vf
@@ -17,7 +16,7 @@ from catanatron.state_functions import get_actual_victory_points
 from pydantic import Field
 
 from catan_llm.bots import BOTS, COLORS
-from catan_llm.determinism import check_fixed_hashseed
+from catan_llm.determinism import EVAL_SEED_LIMIT, check_fixed_hashseed
 from catan_llm.extract import TrajectoryAccumulator, deterministic_game_id, observe_live
 from catan_llm.parse import parse_answer
 from catan_llm.serialize import observation_to_prompt
@@ -154,10 +153,9 @@ class CatanEnv(vf.Env[CatanEnvConfig]):
 
 
 class CatanTaskset(vf.Taskset[vf.Task[CatanData], vf.TasksetConfig]):
-    INFINITE = True
-
     def load(self) -> Iterator[vf.Task]:
-        for i in count():
+        # Bounded so eval seeds can never cross into the training range.
+        for i in range(EVAL_SEED_LIMIT):
             yield vf.Task(
                 CatanData(idx=i, name=f"game#{i}", prompt=None, info={"seed": i})
             )
