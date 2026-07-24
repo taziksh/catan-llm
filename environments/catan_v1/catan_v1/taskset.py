@@ -49,6 +49,7 @@ class CatanEnvConfig(vf.EnvConfig):
     invalid_retries: int = Field(1, ge=0)
     vp_coef: float = 0.1  # weight of reward_vp = min(vps, 10) / 10
     trajectory_dir: str | None = None
+    system_prompt: str | None = None  # None uses SYSTEM_PROMPT
 
 
 class CatanEnv(vf.Env[CatanEnvConfig]):
@@ -103,7 +104,9 @@ class CatanEnv(vf.Env[CatanEnvConfig]):
                 if kind == "agent":
                     seat_task = vf.Task(
                         vf.TaskData(
-                            idx=task.data.idx, prompt=None, system_prompt=SYSTEM_PROMPT
+                            idx=task.data.idx,
+                            prompt=None,
+                            system_prompt=self.config.system_prompt or SYSTEM_PROMPT,
                         )
                     )
                     agent = getattr(agents, f"player{i}")
