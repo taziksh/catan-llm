@@ -5,7 +5,9 @@ self-contained state prompt per decision and answer with an option index.
 """
 
 import random
+import subprocess
 from contextlib import AsyncExitStack
+from pathlib import Path
 from typing import Iterator
 from uuid import uuid4
 
@@ -21,6 +23,19 @@ from catan_llm.determinism import EVAL_SEED_LIMIT, check_fixed_hashseed
 from catan_llm.extract import TrajectoryAccumulator, deterministic_game_id, observe_live
 from catan_llm.parse import parse_answer
 from catan_llm.serialize import observation_to_prompt
+
+def _env_commit():
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, cwd=Path(__file__).parent, timeout=5,
+        )
+        return result.stdout.strip() or "unknown"
+    except OSError:
+        return "unknown"
+
+
+ENV_COMMIT = _env_commit()
 
 SYSTEM_PROMPT = (
     "You are playing Settlers of Catan. Each turn you receive the full game "
@@ -151,6 +166,7 @@ class CatanEnv(vf.Env[CatanEnvConfig]):
                 "color": color.value,
                 "turn_position": game.state.colors.index(color),
                 "game_id": game.id,
+                "env_commit": ENV_COMMIT,
                 "seed": seed,
                 "turns": game.state.num_turns,
                 "winner": winner.value if winner else None,
