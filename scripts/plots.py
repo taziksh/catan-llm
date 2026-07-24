@@ -9,6 +9,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
+from matplotlib import transforms
 from matplotlib.ticker import FuncFormatter, LogLocator
 
 sns.set_theme(style="whitegrid", font="Helvetica Neue", font_scale=1.05)
@@ -170,12 +171,53 @@ def costs_scatter(costs_path, out):
     plt.close()
 
 
+def anchors_winrate(anchors_path, out):
+    data = json.loads(Path(anchors_path).read_text())
+    rows = []
+    for name, r in data["anchors"].items():
+        lo, hi = wilson_interval(r["wins"], r["games"])
+        rows.append(
+            {"anchor": name, "rate": 100 * r["win_rate"], "lo": 100 * lo, "hi": 100 * hi}
+        )
+    df = pd.DataFrame(rows).sort_values("rate")
+    n = next(iter(data["anchors"].values()))["games"]
+
+    plt.figure(figsize=(8, 3.2))
+    plt.barh(
+        df["anchor"], df["rate"],
+        xerr=[df["rate"] - df["lo"], df["hi"] - df["rate"]],
+        color="#2a78d6", height=0.55, capsize=4,
+    )
+    ax = plt.gca()
+    ax.axvline(25, color="#888888", ls="--", lw=1)
+    ax.text(
+        25, 1.02, "chance (25%)",
+        transform=transforms.blended_transform_factory(ax.transData, ax.transAxes),
+        ha="center", color="#666666", fontsize=8.5,
+    )
+    for _, r in df.reset_index().iterrows():
+        plt.annotate(f"{r['rate']:.0f}%", (r["hi"], _), fontsize=9,
+                     textcoords="offset points", xytext=(6, -3))
+    plt.xlim(0, max(df["hi"]) + 8)
+    plt.xlabel("win rate (%), 95% CI")
+    plt.title(
+        f"Scripted-bot anchors vs 3x {data['opponent']} (seat 0), n={n}/anchor",
+        pad=22,
+    )
+    plt.tight_layout()
+    plt.savefig(out / "anchors_winrate.png", dpi=150)
+    plt.close()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--benchmark", default="data/benchmarks/roundrobin_s0_n100.json")
     parser.add_argument("--profile", default="data/benchmarks/profile.json")
     parser.add_argument("--games", default="data/games")
     parser.add_argument("--costs", default="costs.md")
+    parser.add_argument(
+        "--anchors", default="data/benchmarks/anchors_vs_value_function_n300.json"
+    )
     parser.add_argument("--out", default="data/plots")
     args = parser.parse_args()
 
@@ -190,6 +232,8 @@ def main():
         decision_latency(args.profile, out)
     if Path(args.costs).exists():
         costs_scatter(args.costs, out)
+    if Path(args.anchors).exists():
+        anchors_winrate(args.anchors, out)
     print(f"-> {out}")
 
 
