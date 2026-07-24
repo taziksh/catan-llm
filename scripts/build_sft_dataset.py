@@ -46,6 +46,12 @@ def main():
         help="games with seed %% VAL_EVERY == 0 go to val (default: %(default)s)",
     )
     parser.add_argument("--out", default="data/sft")
+    parser.add_argument(
+        "--samples",
+        type=int,
+        default=None,
+        help="at least this many train samples, whole games only",
+    )
     args = parser.parse_args()
 
     out = Path(args.out)
@@ -54,6 +60,8 @@ def main():
     writers = {name: open(out / f"{name}.jsonl", "w") for name in counts}
     games = 0
     for path in sorted(Path(args.games).glob("*.jsonl")):
+        if args.samples is not None and counts["train"] >= args.samples:
+            break
         lines = path.read_text().splitlines()
         game = GameRecord.model_validate_json(lines[0])
         if game.seed is None or game.seed < EVAL_SEED_LIMIT:
@@ -67,6 +75,10 @@ def main():
         games += bool(wrote)
     for writer in writers.values():
         writer.close()
+    if args.samples is not None and counts["train"] < args.samples:
+        raise SystemExit(
+            f"asked for {args.samples} train samples, only {counts['train']} available"
+        )
     print(f"{games} games -> train={counts['train']} val={counts['val']} -> {out}")
 
 
