@@ -267,7 +267,6 @@ def _load_run(path, round_dir):
 
 
 def models_vs_anchors(outputs_dir, anchors_path, out, round_dir=None):
-    # Per model+mode+seed: first-party beats OpenRouter, then latest wins.
     chosen = {}
     for path in Path(outputs_dir).glob("*/*/traces.jsonl"):
         for episode in _load_run(path, round_dir) or []:

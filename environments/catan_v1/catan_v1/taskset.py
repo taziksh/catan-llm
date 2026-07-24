@@ -49,7 +49,7 @@ class CatanEnvConfig(vf.EnvConfig):
     invalid_retries: int = Field(1, ge=0)
     vp_coef: float = 0.1  # weight of reward_vp = min(vps, 10) / 10
     trajectory_dir: str | None = None
-    system_prompt: str | None = None  # None uses SYSTEM_PROMPT
+    system_prompt: str | None = None
 
 
 class CatanEnv(vf.Env[CatanEnvConfig]):
