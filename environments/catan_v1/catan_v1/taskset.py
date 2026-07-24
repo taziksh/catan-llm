@@ -7,6 +7,7 @@ self-contained state prompt per decision and answer with an option index.
 import random
 from contextlib import AsyncExitStack
 from typing import Iterator
+from uuid import uuid4
 
 import verifiers.v1 as vf
 from catanatron import Game
@@ -60,7 +61,8 @@ class CatanEnv(vf.Env[CatanEnvConfig]):
             for i, kind in enumerate(seat_kinds)
         ]
         game = Game(engine_players, seed=seed)
-        game.id = deterministic_game_id(game)
+        # Rollouts of one seed differ, so each needs a unique trajectory file.
+        game.id = f"{deterministic_game_id(game)}_{uuid4().hex[:8]}"
         rng = random.Random(seed)
         accumulator = None
         if self.config.trajectory_dir:
