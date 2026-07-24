@@ -4,7 +4,7 @@ Stateless: one self-contained prompt per decision. Options keep
 legal_actions order — the index is the training label.
 """
 
-from catan_llm.geometry import NODE_TILES
+from catan_llm.geometry import NODE_EDGES, NODE_TILES
 from catan_llm.observe import Observation, observe
 from catan_llm.schema import ActionType, DecisionRecord, GameRecord, Resource
 
@@ -113,9 +113,11 @@ def _board_lines(obs: Observation, tiles):
     for u, v, color in obs.board.roads:
         roads_by_color.setdefault(color.value, []).append(f"{u}-{v}")
     roads = " | ".join(f"{c} {' '.join(edges)}" for c, edges in roads_by_color.items())
+    edges = " ".join(f"{u}-{v}" for u, v in NODE_EDGES)
     return [
         "BOARD",
         f"tiles: {tile_list}",
+        f"edges: {edges}",
         f"ports (resource=2:1, any=3:1): {ports}",
         f"robber: tile {obs.board.robber}",
         f"buildings: {buildings or '-'}",
@@ -159,7 +161,7 @@ def observation_to_prompt(obs: Observation) -> str:
         f"Catan. First to {obs.vps_to_win} victory points wins."
     )
     if not obs.trading:
-        intro += " No trading between players; maritime (bank/port) trades only."
+        intro += " No trading between players, but you can trade with the bank/port."
     options = [
         f"{i}. {option_text(action_type, payload, tiles, own_nodes)}"
         for i, (action_type, payload) in enumerate(obs.legal_actions)

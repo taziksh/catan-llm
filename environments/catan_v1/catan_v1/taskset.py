@@ -24,8 +24,8 @@ from catan_llm.serialize import observation_to_prompt
 
 SYSTEM_PROMPT = (
     "You are playing Settlers of Catan. Each turn you receive the full game "
-    "state and a numbered list of your legal options. You may reason first; "
-    'only your final "answer: <option number>" line counts.'
+    "state and a numbered list of your legal options. You may reason briefly "
+    'first. Only your final "answer: <option number>" line counts.'
 )
 
 

@@ -14,11 +14,20 @@ def main():
         node: sorted(tile.id for tile in tiles)
         for node, tiles in sorted(adjacent.items())
     }
+    edges = sorted(
+        {
+            tuple(sorted(edge))
+            for tile in game.state.board.map.land_tiles.values()
+            for edge in tile.edges.values()
+        }
+    )
     lines = [HEADER, "", "NODE_TILES = {"]
     lines += [f"    {node}: {tiles}," for node, tiles in node_tiles.items()]
-    lines += ["}", ""]
+    lines += ["}", "", "NODE_EDGES = ["]
+    lines += [f"    {edge}," for edge in edges]
+    lines += ["]", ""]
     Path("catan_llm/geometry.py").write_text("\n".join(lines))
-    print(f"catan_llm/geometry.py: {len(node_tiles)} nodes")
+    print(f"catan_llm/geometry.py: {len(node_tiles)} nodes, {len(edges)} edges")
 
 
 if __name__ == "__main__":
