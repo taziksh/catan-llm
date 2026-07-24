@@ -255,7 +255,7 @@ def _load_run(path, round_dir):
         model = MODEL_ALIASES.get(model, model)
         episodes.append(
             {
-                "label": f"{model} ({_mode_label(trace)})",
+                "label": model + (" (thinking)" if _mode_label(trace) == "thinking" else ""),
                 "seed": trace["info"]["catan"]["seed"],
                 "margin": metrics["vp_margin"] * 10,
                 "first_party": first_party,
@@ -307,37 +307,35 @@ def models_vs_anchors(outputs_dir, anchors_path, out, round_dir=None):
     def rel(margin):
         return 100 * (margin - lo) / (hi - lo)
 
-    labels = sorted(margins, key=lambda k: -sum(margins[k]) / len(margins[k]))
-    scores = [rel(sum(margins[k]) / len(margins[k])) for k in labels]
-    counts = [len(margins[k]) for k in labels]
+    rows = [
+        (label, sum(values) / len(values), len(values)) for label, values in margins.items()
+    ]
+    rows += [
+        ("alpha_beta (bot)", hi, None),
+        ("value_function (bot)", anchor_margin("value_function"), None),
+        ("victory_point (bot)", lo, None),
+    ]
+    rows.sort(key=lambda r: -r[1])
+    labels = [label for label, _, _ in rows]
+    scores = [rel(margin) for _, margin, _ in rows]
 
-    greens = sns.color_palette("crest", n_colors=max(len(labels), 3))[::-1]
-    plt.figure(figsize=(10, 0.62 * len(labels) + 2.2))
+    greens = iter(sns.color_palette("crest", n_colors=len(margins))[::-1])
+    colors = ["#b0b0b0" if n is None else next(greens) for _, _, n in rows]
+    plt.figure(figsize=(10, 0.62 * len(rows) + 2.2))
     ax = plt.gca()
-    ax.barh(range(len(labels)), scores, color=greens[: len(labels)], height=0.62)
-    ax.set_yticks(range(len(labels)), labels, fontsize=11, fontweight="bold")
+    ax.barh(range(len(rows)), scores, color=colors, height=0.62)
+    ax.set_yticks(range(len(rows)), labels, fontsize=11, fontweight="bold")
     ax.invert_yaxis()
-    peer = rel(anchor_margin("value_function"))
-    for x, name, style in [
-        (100, "alpha_beta", "-"),
-        (peer, "value_function", "--"),
-        (0, "victory_point", ":"),
-    ]:
-        ax.axvline(x, color="#999999", ls=style, lw=1)
-        ax.text(
-            x, 1.03, name,
-            transform=transforms.blended_transform_factory(ax.transData, ax.transAxes),
-            ha="center", color="#666666", fontsize=8.5,
-        )
-    for i, (score, n) in enumerate(zip(scores, counts)):
+    for i, (score, (_, _, n)) in enumerate(zip(scores, rows)):
+        games = "" if n is None else f"  ({n} game{'s' if n > 1 else ''})"
         ax.annotate(
-            f"{score:.0f}%  ({n} game{'s' if n > 1 else ''})",
+            f"{score:.0f}%{games}",
             (score, i), fontsize=10.5, fontweight="bold", va="center",
             textcoords="offset points", xytext=(7, 0),
         )
     ax.set_xlim(min(min(scores) - 6, -5), 115)
     ax.set_xlabel("mean VP margin, % of expert anchor (0% = victory_point, 100% = alpha_beta)")
-    ax.set_title("LLMs vs 3x value_function bots", pad=30, fontweight="bold")
+    ax.set_title("Catan leaderboard", pad=30, fontweight="bold")
     sns.despine(left=True)
     plt.tight_layout()
     plt.savefig(out / "models_vs_anchors.png", dpi=300)
