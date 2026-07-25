@@ -15,6 +15,104 @@ from matplotlib.ticker import FuncFormatter, LogLocator
 
 sns.set_theme(style="whitegrid", font="Helvetica Neue", font_scale=1.05)
 
+THINKING = "#2d5f8a"
+NONTHINKING = "#eb6834"
+BOT = "#b0b0b0"
+SFT = "#4d8f4f"
+
+
+def save(out, name):
+    plt.tight_layout()
+    plt.savefig(Path(out) / name, dpi=300)
+    plt.close()
+
+
+def value_label(ax, x, y, text, color="#333"):
+    """Places a bar-end label on whichever side keeps it inside the axes."""
+    lo, hi = ax.get_xlim()
+    inward = x > lo + 0.85 * (hi - lo)
+    ax.annotate(
+        text, (x, y), fontsize=9.5, fontweight="bold", color=color,
+        va="top" if inward else "center",
+        ha="right" if inward else "left",
+        textcoords="offset points", xytext=(-8, -7) if inward else (8, 0),
+    )
+
+
+def episode_metrics(run_dir):
+    """Yields (model, seed, rank, vp_margin, win) per agent trace in a run."""
+    for line in open(Path(run_dir) / "traces.jsonl"):
+        episode = json.loads(line)
+        for trace in episode["traces"]:
+            yield (
+                trace["agent"]["model"],
+                trace["info"]["catan"]["seed"],
+                trace["metrics"]["rank"],
+                trace["metrics"]["vp_margin"] * 10,
+                trace["rewards"]["reward_win"] > 0,
+            )
+
+
+def sft_scaling(rows, references, out):
+    """Margin vs training-data size for the SFT models, with bot reference lines."""
+    fig, ax = plt.subplots(figsize=(8, 5.2))
+    stages = [stage for stage, _ in rows[next(iter(rows))]]
+    for name, points in rows.items():
+        color = SFT if "9B" in name else THINKING
+        means = [values.mean() for _, values in points]
+        ses = [values.std(ddof=1) / len(values) ** 0.5 for _, values in points]
+        ax.errorbar(range(len(points)), means, yerr=ses, color=color, marker="o",
+                    markersize=6, lw=2, capsize=4, label=name)
+        for i, mean in enumerate(means):
+            above = all(mean >= other[1][i][1].mean() for other in rows.items())
+            ax.annotate(f"{mean:+.1f}", (i, mean), textcoords="offset points",
+                        xytext=(10, 7 if above else -16),
+                        fontsize=9.5, fontweight="bold", color=color)
+    for y, name in references:
+        ax.axhline(y, color="#aaa", lw=1, ls="--")
+        ax.annotate(name, (len(stages) - 0.98, y), fontsize=8.5, color="#888", va="bottom")
+    labels = [f"{stage}\n{len(values)} games" for stage, values in rows[next(iter(rows))]]
+    ax.set_xticks(range(len(stages)), labels, fontsize=10.5)
+    ax.set_ylabel("mean VP margin vs value_function bots")
+    ax.set_title("SFT scaling", fontweight="bold", pad=12)
+    ax.set_xlim(-0.2, len(stages) - 0.4)
+    ax.legend(frameon=False, fontsize=10, loc="lower right")
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.grid(False)
+    save(out, "sft_scaling.png")
+
+
+def leaderboard(rows, lo, hi, out, name, bots=()):
+    """Horizontal leaderboard on the expert-anchor scale with standard errors."""
+    def rel(margin):
+        return 100 * (margin - lo) / (hi - lo)
+
+    entries = []
+    for label, margins, color in rows:
+        mean = margins.mean()
+        se = margins.std(ddof=1) / len(margins) ** 0.5
+        entries.append((label, rel(mean), 100 * se / (hi - lo), len(margins), color))
+    for label, value in (("alpha_beta (bot)", hi), ("victory_point (bot)", lo), *bots):
+        entries.append((label, rel(value), None, None, BOT))
+    entries.sort(key=lambda e: -e[1])
+
+    plt.figure(figsize=(10, 0.52 * len(entries) + 2))
+    ax = plt.gca()
+    for i, (label, score, se, n, color) in enumerate(entries):
+        ax.barh(i, score, color=color, height=0.62, xerr=se,
+                error_kw={"ecolor": "#555", "capsize": 3, "lw": 1.1})
+    ax.set_yticks(range(len(entries)), [e[0] for e in entries], fontsize=11, fontweight="bold")
+    ax.invert_yaxis()
+    ax.set_xlim(-8, 132)
+    for i, (label, score, se, n, color) in enumerate(entries):
+        games = "" if n is None else f"  ({n} games)"
+        value_label(ax, score + (se or 0), i, f"{score:.0f}%{games}")
+    ax.set_xlabel("mean VP margin, % of expert anchor (0% = victory_point, 100% = alpha_beta)")
+    ax.set_title("Catan leaderboard", pad=14, fontweight="bold")
+    ax.spines[["top", "right", "left"]].set_visible(False)
+    ax.grid(False)
+    save(out, name)
+
 
 def wilson_interval(wins, n, z=1.96):
     center = (wins + z * z / 2) / (n + z * z)
@@ -319,8 +417,11 @@ def models_vs_anchors(outputs_dir, anchors_path, out, round_dir=None):
     labels = [label for label, _, _ in rows]
     scores = [rel(margin) for _, margin, _ in rows]
 
-    greens = iter(sns.color_palette("crest", n_colors=len(margins))[::-1])
-    colors = ["#b0b0b0" if n is None else next(greens) for _, _, n in rows]
+    def bar_color(label, n):
+        if n is None:
+            return "#b0b0b0"
+        return "#2d5f8a" if "(thinking)" in label else "#eb6834"
+    colors = [bar_color(label, n) for label, _, n in rows]
     plt.figure(figsize=(10, 0.62 * len(rows) + 2.2))
     ax = plt.gca()
     ax.barh(range(len(rows)), scores, color=colors, height=0.62)
