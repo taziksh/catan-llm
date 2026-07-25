@@ -65,7 +65,7 @@ def deterministic_game_id(game: Game) -> str:
     return f"{bots}_s{game.seed}"
 
 
-def _to_action(action, catan_map: CatanMap) -> Action:
+def to_action(action, catan_map: CatanMap) -> Action:
     """Converts a catanatron Action to a schema [action_type, payload] pair."""
     action_type = ActionType(action.action_type.value)
     value = action.value
@@ -140,7 +140,7 @@ def decision_record(game: Game, action, i: int) -> DecisionRecord:
     """Builds a DecisionRecord from a game right before `action` is applied."""
     state = game.state
     catan_map = state.board.map
-    legal_actions = [_to_action(a, catan_map) for a in game.playable_actions]
+    legal_actions = [to_action(a, catan_map) for a in game.playable_actions]
     try:
         chosen_action = game.playable_actions.index(action)
     except ValueError:
@@ -148,7 +148,7 @@ def decision_record(game: Game, action, i: int) -> DecisionRecord:
         # in playable_actions (see catanatron.game.is_valid_action).
         if action.action_type.value != "OFFER_TRADE":
             raise
-        legal_actions.append(_to_action(action, catan_map))
+        legal_actions.append(to_action(action, catan_map))
         chosen_action = len(legal_actions) - 1
 
     return DecisionRecord(
@@ -185,7 +185,7 @@ def observe_live(game: Game, trading: bool = False) -> Observation:
             opponent_view(color, ps) for color, ps in players.items() if color != actor
         ],
         bank=_bank_snapshot(state),
-        legal_actions=[_to_action(a, catan_map) for a in game.playable_actions],
+        legal_actions=[to_action(a, catan_map) for a in game.playable_actions],
     )
 
 
