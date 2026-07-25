@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Transcript UI references</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --ink: #f3f0e8;
+      --muted: #aaa79f;
+      --line: #33332f;
+      --panel: #1b1b19;
+      --panel-2: #232320;
+      --paper: #ece7d9;
+      --yellow: #e5ba57;
+      --green: #82a77a;
+      --blue: #8ca8c8;
+      --max: 1320px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html {
+      background: #11110f;
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.45;
+    }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+    }
+
+    a { color: inherit; }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 4;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 58px;
+      padding: 0 28px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(17, 17, 15, .92);
+      backdrop-filter: blur(16px);
+    }
+
+    .eyebrow {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 720;
+      letter-spacing: .13em;
+      text-transform: uppercase;
+    }
+
+    .topbar strong {
+      font-size: 14px;
+      font-weight: 640;
+    }
+
+    main {
+      width: min(var(--max), calc(100% - 40px));
+      margin: 0 auto;
+      padding: 64px 0 96px;
+    }
+
+    .intro {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(360px, .78fr);
+      gap: 58px;
+      align-items: end;
+      margin-bottom: 56px;
+    }
+
+    h1 {
+      max-width: 780px;
+      margin: 12px 0 18px;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(48px, 6vw, 84px);
+      font-weight: 400;
+      letter-spacing: -.045em;
+      line-height: .98;
+    }
+
+    .lede {
+      max-width: 700px;
+      margin: 0;
+      color: #c8c4ba;
+      font-size: clamp(17px, 2vw, 22px);
+    }
+
+    .verdict {
+      padding: 24px;
+      border: 1px solid #4a4437;
+      border-radius: 16px;
+      background: #211e17;
+    }
+
+    .verdict strong {
+      display: block;
+      margin: 7px 0 10px;
+      color: #f2d99e;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 28px;
+      font-weight: 400;
+    }
+
+    .verdict p {
+      margin: 0;
+      color: #c5bfae;
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      margin-bottom: 80px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: var(--panel);
+    }
+
+    .split article {
+      min-height: 214px;
+      padding: 30px;
+    }
+
+    .split article + article {
+      border-left: 1px solid var(--line);
+    }
+
+    .split h2 {
+      margin: 12px 0 12px;
+      font-size: 25px;
+      letter-spacing: -.025em;
+    }
+
+    .split p {
+      max-width: 500px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 16px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 26px;
+      padding: 0 10px;
+      border: 1px solid currentColor;
+      border-radius: 999px;
+      color: var(--green);
+      font-size: 11px;
+      font-weight: 760;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .pill.custom { color: var(--yellow); }
+
+    .section-head {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 24px;
+      margin: 0 0 22px;
+    }
+
+    .section-head h2 {
+      margin: 4px 0 0;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(34px, 4vw, 52px);
+      font-weight: 400;
+      letter-spacing: -.035em;
+    }
+
+    .source-link {
+      flex: 0 0 auto;
+      color: var(--muted);
+      font-size: 13px;
+      text-underline-offset: 4px;
+    }
+
+    .reference {
+      margin-bottom: 84px;
+    }
+
+    .shots {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+
+    figure {
+      min-width: 0;
+      margin: 0;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--panel);
+    }
+
+    figure.single {
+      max-width: 1100px;
+    }
+
+    .shot {
+      display: block;
+      width: 100%;
+      aspect-ratio: 1.76;
+      object-fit: cover;
+      object-position: top left;
+      background: white;
+    }
+
+    .shot.contain {
+      aspect-ratio: 1.36;
+      object-fit: contain;
+    }
+
+    figcaption {
+      display: grid;
+      grid-template-columns: 42px 1fr;
+      gap: 14px;
+      min-height: 106px;
+      padding: 18px 20px 20px;
+      border-top: 1px solid var(--line);
+    }
+
+    .number {
+      display: grid;
+      width: 34px;
+      height: 34px;
+      place-items: center;
+      border: 1px solid #4b4b45;
+      border-radius: 50%;
+      color: #d7d3c8;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 16px;
+    }
+
+    figcaption strong {
+      display: block;
+      margin: 1px 0 5px;
+      font-size: 15px;
+    }
+
+    figcaption p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .pattern {
+      display: grid;
+      grid-template-columns: minmax(300px, .72fr) minmax(0, 1.28fr);
+      gap: 18px;
+      margin-bottom: 84px;
+    }
+
+    .raw,
+    .human {
+      min-height: 390px;
+      padding: 28px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+    }
+
+    .raw { background: #171715; }
+    .human { background: #242117; }
+
+    .raw h3,
+    .human h3 {
+      margin: 8px 0 9px;
+      font-size: 23px;
+      letter-spacing: -.025em;
+    }
+
+    .raw > p,
+    .human > p {
+      margin: 0 0 24px;
+      color: var(--muted);
+    }
+
+    pre {
+      max-height: 218px;
+      margin: 0;
+      padding: 18px;
+      overflow: hidden;
+      border: 1px solid #2c2c29;
+      border-radius: 10px;
+      background: #10100f;
+      color: #8f8d86;
+      font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      white-space: pre-wrap;
+    }
+
+    .turn-card {
+      padding: 22px;
+      border: 1px solid #5d5339;
+      border-radius: 13px;
+      background: #efe8d3;
+      color: #26231b;
+      box-shadow: 0 18px 38px rgba(0, 0, 0, .16);
+    }
+
+    .turn-kicker {
+      color: #766d58;
+      font-size: 11px;
+      font-weight: 760;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+
+    .turn-card h4 {
+      margin: 7px 0 18px;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 31px;
+      font-weight: 400;
+      letter-spacing: -.03em;
+    }
+
+    .turn-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .datum {
+      padding-top: 11px;
+      border-top: 1px solid #c7bea5;
+    }
+
+    .datum span {
+      display: block;
+      margin-bottom: 4px;
+      color: #786f59;
+      font-size: 10px;
+      font-weight: 760;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .datum strong {
+      font-size: 14px;
+      font-weight: 650;
+    }
+
+    .choice {
+      grid-column: 1 / -1;
+      padding: 13px 14px;
+      border-radius: 9px;
+      background: #dbe3c7;
+    }
+
+    .choice span { color: #647051; }
+
+    details {
+      margin-top: 14px;
+      color: #837963;
+      font-size: 12px;
+    }
+
+    summary { cursor: pointer; }
+
+    .bottom-line {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 28px;
+      padding-top: 24px;
+      border-top: 1px solid var(--line);
+    }
+
+    .bottom-line strong {
+      display: block;
+      max-width: 640px;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 30px;
+      font-weight: 400;
+      letter-spacing: -.02em;
+    }
+
+    .bottom-line p {
+      max-width: 470px;
+      margin: 3px 0 0;
+      color: var(--muted);
+    }
+
+    @media (max-width: 900px) {
+      .intro,
+      .split,
+      .shots,
+      .pattern {
+        grid-template-columns: 1fr;
+      }
+
+      .split article + article {
+        border-top: 1px solid var(--line);
+        border-left: 0;
+      }
+
+      .topbar { padding: 0 18px; }
+      main { width: min(100% - 28px, var(--max)); padding-top: 42px; }
+      .bottom-line { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <strong>catan·llm research board</strong>
+    <span class="eyebrow">real products · not mockups</span>
+  </header>
+
+  <main>
+    <section class="intro">
+      <div>
+        <div class="eyebrow">Transcript + replay research</div>
+        <h1>We should borrow the browser, not replace the board.</h1>
+        <p class="lede">Existing tools already solve corpus navigation, filtering, transcript review, and automated analysis. The Catan state still needs our visual renderer.</p>
+      </div>
+      <aside class="verdict">
+        <div class="eyebrow">Current verdict</div>
+        <strong>Inspect Scout is the closest fit.</strong>
+        <p>It is open source, runs locally, accepts custom transcript sources, and includes both human review and programmable LLM/grep scanners.</p>
+      </aside>
+    </section>
+
+    <section class="split" aria-label="Recommended division of work">
+      <article>
+        <span class="pill">Use existing</span>
+        <h2>Scout owns the corpus</h2>
+        <p>Game list, model/seed/outcome filters, sortable columns, full-text transcript access, annotations, scanner results, and finding failure patterns across thousands of games.</p>
+      </article>
+      <article>
+        <span class="pill custom">Keep custom</span>
+        <h2>Our viewer owns game meaning</h2>
+        <p>Board state, dice, hands, legal moves, chosen action, replay controls, and the link between a model decision and the exact Catan position it saw.</p>
+      </article>
+    </section>
+
+    <section class="reference">
+      <header class="section-head">
+        <div>
+          <div class="eyebrow">Closest existing tool</div>
+          <h2>Inspect Scout</h2>
+        </div>
+        <a class="source-link" href="https://meridianlabs-ai.github.io/inspect_scout/workflow.html">official workflow ↗</a>
+      </header>
+      <div class="shots">
+        <figure>
+          <a href="example-uis/scout-transcripts-list.png"><img class="shot" src="example-uis/scout-transcripts-list.png" alt="Inspect Scout transcript list"></a>
+          <figcaption>
+            <span class="number">1</span>
+            <div>
+              <strong>The game library is already here.</strong>
+              <p>Filter chips, configurable columns, pass/fail state, model names, task IDs, and a dense list that can handle a real corpus.</p>
+            </div>
+          </figcaption>
+        </figure>
+        <figure>
+          <a href="example-uis/scout-transcripts-detail.png"><img class="shot" src="example-uis/scout-transcripts-detail.png" alt="Inspect Scout transcript detail"></a>
+          <figcaption>
+            <span class="number">2</span>
+            <div>
+              <strong>The transcript reader is also here.</strong>
+              <p>Messages, events, metadata, raw data, copy tools, and next/previous navigation are built in. This is the part we should not rewrite.</p>
+            </div>
+          </figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section class="reference">
+      <header class="section-head">
+        <div>
+          <div class="eyebrow">Interaction model to steal</div>
+          <h2>Lichess analysis</h2>
+        </div>
+        <a class="source-link" href="https://lichess.org/analysis">live analysis board ↗</a>
+      </header>
+      <figure class="single">
+        <a href="example-uis/lichess-analysis.png"><img class="shot contain" src="example-uis/lichess-analysis.png" alt="Lichess analysis board with move history"></a>
+        <figcaption>
+          <span class="number">3</span>
+          <div>
+            <strong>Visual state and history stay synchronized.</strong>
+            <p>The board remains the anchor while the chronological move list, evaluation, errors, and transport controls explain how the position happened. Our Catan replay should behave like this.</p>
+          </div>
+        </figcaption>
+      </figure>
+    </section>
+
+    <section class="reference">
+      <header class="section-head">
+        <div>
+          <div class="eyebrow">Alternative corpus pattern</div>
+          <h2>Inspect View</h2>
+        </div>
+        <a class="source-link" href="https://inspect.aisi.org.uk/log-viewer.html">official log viewer ↗</a>
+      </header>
+      <figure>
+        <a href="example-uis/inspect-logs.png"><img class="shot" src="example-uis/inspect-logs.png" alt="Inspect View log and sample browser"></a>
+        <figcaption>
+          <span class="number">4</span>
+          <div>
+            <strong>Runs on the left, decisions in the table.</strong>
+            <p>This is useful if we treat a game as a run and each model decision as a sample. It is less transcript-focused than Scout, but the hierarchy maps cleanly to experiments → games → decisions.</p>
+          </div>
+        </figcaption>
+      </figure>
+    </section>
+
+    <section>
+      <header class="section-head">
+        <div>
+          <div class="eyebrow">The Catan-specific problem</div>
+          <h2>A generic transcript is still a wall of state.</h2>
+        </div>
+      </header>
+      <div class="pattern">
+        <article class="raw">
+          <span class="pill">Raw prompt</span>
+          <h3>Technically readable. Human-hostile.</h3>
+          <p>This is representative of the actual training data in this repo.</p>
+          <pre>turn 66 | phase: PLAY_TURN
+
+BOARD
+tiles: 0:brick-11 1:sheep-10 2:brick-3 ...
+edges: 0-1 0-5 0-20 1-2 1-6 2-3 ...
+ports: any@25-26, ore@32-33, wood@35-36 ...
+robber: tile 17
+buildings: BLUE settlement@0, RED city@4 ...
+roads: BLUE 0-1 22-23 23-52 | RED 1-6 ...
+
+YOUR OPTIONS
+0. end turn
+1. buy a development card
+2. trade 4 ore for 1 brick
+3. trade 4 ore for 1 wheat ...</pre>
+        </article>
+
+        <article class="human">
+          <span class="pill custom">Human layer</span>
+          <h3>The same turn should read like a game.</h3>
+          <p>Scout can store and search the raw record. Our renderer should turn its structured fields into this.</p>
+          <div class="turn-card">
+            <div class="turn-kicker">Turn 66 · Red to move</div>
+            <h4>Play turn</h4>
+            <div class="turn-grid">
+              <div class="datum">
+                <span>Score</span>
+                <strong>Red 5 VP · longest road</strong>
+              </div>
+              <div class="datum">
+                <span>Hand</span>
+                <strong>3 wood · 1 sheep · 1 wheat · 4 ore</strong>
+              </div>
+              <div class="datum">
+                <span>Options</span>
+                <strong>6 legal moves</strong>
+              </div>
+              <div class="datum">
+                <span>Board</span>
+                <strong>Shown visually at left</strong>
+              </div>
+              <div class="datum choice">
+                <span>Model chose option 2</span>
+                <strong>Trade 4 ore → 1 brick</strong>
+              </div>
+            </div>
+            <details>
+              <summary>Show exact prompt</summary>
+              The raw serialized prompt remains available for debugging and reproducibility.
+            </details>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <footer class="bottom-line">
+      <strong>Practical direction: Scout library + synchronized Catan replay.</strong>
+      <p>Write a small importer, not another observability product. A selected Scout transcript should open the matching game and decision in our viewer; the exact prompt stays one click away.</p>
+    </footer>
+  </main>
+</body>
+</html>
