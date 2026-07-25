@@ -54,7 +54,10 @@ _NO_PAYLOAD = {
 
 
 def _bot_name(player) -> str:
-    """Snake-cased class name minus the Player suffix, e.g. 'alpha_beta'."""
+    """Registry name if tagged, else snake-cased class name minus the Player suffix."""
+    tagged = getattr(player, "bot_name", None)
+    if tagged:
+        return tagged
     name = type(player).__name__.removesuffix("Player")
     return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
 
