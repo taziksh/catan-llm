@@ -22,6 +22,7 @@ from catan_llm.bots import BOTS, COLORS
 from catan_llm.determinism import EVAL_SEED_LIMIT, check_fixed_hashseed
 from catan_llm.extract import TrajectoryAccumulator, deterministic_game_id, observe_live
 from catan_llm.parse import parse_answer
+from catan_llm.prompts import PROMPT_VERSION, SYSTEM_PROMPT
 from catan_llm.serialize import observation_to_prompt
 
 def _env_commit():
@@ -36,13 +37,6 @@ def _env_commit():
 
 
 ENV_COMMIT = _env_commit()
-
-SYSTEM_PROMPT = (
-    "You are playing Settlers of Catan. Each turn you receive the full game "
-    "state and a numbered list of your legal options. You may reason briefly "
-    'first. Only your final "answer: <option number>" line counts.'
-)
-
 
 class LlmPlayer(EnginePlayer):
     """Seat driven by the env, the engine never calls decide()."""
@@ -167,6 +161,7 @@ class CatanEnv(vf.Env[CatanEnvConfig]):
                 "turn_position": game.state.colors.index(color),
                 "game_id": game.id,
                 "env_commit": ENV_COMMIT,
+                "prompt_version": PROMPT_VERSION,
                 "seed": seed,
                 "turns": game.state.num_turns,
                 "winner": winner.value if winner else None,
