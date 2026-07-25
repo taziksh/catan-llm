@@ -14,6 +14,7 @@ BOTS = {
     "victory_point": VictoryPointPlayer,
     "value_function": ValueFunctionPlayer,
     "alpha_beta": AlphaBetaPlayer,
+    "alpha_beta_d3": lambda color: AlphaBetaPlayer(color, depth=3),
     "same_turn_alpha_beta": SameTurnAlphaBetaPlayer,
     "greedy_playouts": GreedyPlayoutsPlayer,
     "mcts": MCTSPlayer,
