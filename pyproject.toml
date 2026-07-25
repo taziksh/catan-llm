@@ -4,8 +4,11 @@ version = "0.1.0"
 description = "LLM agents for Settlers of Catan via the catanatron engine"
 requires-python = ">=3.13"
 dependencies = [
+    "aiohttp>=3.14.2",
     "catanatron",
     "pydantic>=2.13.4",
+    "tinker-cookbook",
+    "wandb>=0.28.1",
 ]
 
 [build-system]
@@ -25,9 +28,11 @@ members = ["environments/catan_v1"]
 # Fork of bcollazo/catanatron d3f4ad0 with per-game rng (stream-identical
 # per seed; safe under concurrent games). Upstream PR: bcollazo/catanatron#380.
 catanatron = { git = "https://github.com/taziksh/catanatron.git", rev = "89e9397e05ed02d56c911f90ca199a0e382c2eb4" }
+tinker-cookbook = { git = "https://github.com/thinking-machines-lab/tinker-cookbook" }
 
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
     "seaborn>=0.13.2",
+    "tinker>=0.23.3",
 ]
