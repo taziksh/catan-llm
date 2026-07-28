@@ -13,7 +13,14 @@ import seaborn as sns
 from matplotlib import transforms
 from matplotlib.ticker import FuncFormatter, LogLocator
 
-sns.set_theme(style="whitegrid", font="Helvetica Neue", font_scale=1.05)
+import scienceplots  # noqa: F401  (registers the styles)
+
+plt.style.use(["science", "no-latex"])
+plt.rcParams.update({
+    "xtick.top": False, "ytick.right": False,
+    "xtick.minor.visible": False, "ytick.minor.visible": False,
+    "xtick.direction": "out", "ytick.direction": "out",
+})
 
 THINKING = "#2d5f8a"
 NONTHINKING = "#eb6834"
