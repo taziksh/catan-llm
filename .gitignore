@@ -7,3 +7,4 @@ dist/
 data/
 .env
 outputs/
+wandb/
