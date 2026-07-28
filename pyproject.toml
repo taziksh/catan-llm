@@ -33,6 +33,7 @@ tinker-cookbook = { git = "https://github.com/thinking-machines-lab/tinker-cookb
 
 [dependency-groups]
 dev = [
+    "hypothesis>=6.163.0",
     "pytest>=9.1.1",
     "seaborn>=0.13.2",
     "tinker>=0.23.3",
