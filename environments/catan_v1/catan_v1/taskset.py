@@ -81,6 +81,7 @@ class CatanEnv(vf.Env[CatanEnvConfig]):
 
         seat_of = {p.color: i for i, p in enumerate(engine_players)}
         invalid = [0] * len(seat_kinds)
+        dropped = [0] * len(seat_kinds)
         asked = [0] * len(seat_kinds)
 
         async def ask(interaction, seat):
@@ -92,9 +93,11 @@ class CatanEnv(vf.Env[CatanEnvConfig]):
                     segment = await interaction.turn(prompt)
                 except RuntimeError:
                     # The run can end mid-game, e.g. on provider failure.
-                    break
+                    dropped[seat] += 1
+                    return rng.choice(game.playable_actions)
                 if segment.terminated:
-                    break
+                    dropped[seat] += 1
+                    return rng.choice(game.playable_actions)
                 index = parse_answer(segment.last_reply or "", n)
                 if index is not None:
                     return game.playable_actions[index]
@@ -148,6 +151,7 @@ class CatanEnv(vf.Env[CatanEnvConfig]):
             trace.record_reward("reward_win", float(winner == color))
             trace.record_reward("reward_vp", min(vps, 10) / 10, weight=self.config.vp_coef)
             trace.record_metric("invalid_rate", invalid[i] / max(asked[i], 1))
+            trace.record_metric("dropped_rate", dropped[i] / max(asked[i], 1))
             trace.record_metric("truncated", float(winner is None))
             trace.record_metric("game_length", float(game.state.num_turns))
             trace.record_metric("decisions", float(asked[i]))
