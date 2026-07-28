@@ -405,11 +405,15 @@ def costs_scatter(costs_path, out):
                 color="#2a78d6", s=55, zorder=2)
     plt.scatter(frontier["cost"], frontier["score"],
                 color="#eb6834", s=55, zorder=3, label="cost-efficient frontier")
-    # (dx, dy, ha) for the crowded mid-band; others alternate above/below.
+    # (dx, dy, ha) for the crowded mid-band and frontier-line neighbors;
+    # others alternate above/below.
     nudge = {
-        "MiniMax M3": (-6, 3, "right"),
-        "MiMo-V2.5-Pro": (0, -13, "center"),
+        "MiniMax M3": (-6, 6, "right"),
+        "MiMo-V2.5-Pro": (-8, -4, "right"),
         "GPT-5.6 Luna": (-6, -2, "right"),
+        "GPT-5.6 Terra": (4, -12, "left"),
+        "Kimi K3": (2, 7, "left"),
+        "DeepSeek V4 Flash": (0, -14, "center"),
         "Muse Spark 1.1": (0, -13, "center"),
         "GLM-5.2": (2, 7, "left"),
         "Qwen3.7-Max": (-6, 3, "right"),
@@ -426,9 +430,8 @@ def costs_scatter(costs_path, out):
     ax = plt.gca()
     ax.xaxis.set_major_locator(LogLocator(subs=(1, 2, 5)))
     ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: f"${v:g}"))
-    plt.xlabel("estimated cost per game (log)")
+    plt.xlabel("estimated cost per game (log), 500K in / 50K out")
     plt.ylabel("AA Intelligence Index")
-    plt.title("Model intelligence vs cost per game (500K in / 50K out)")
     plt.legend(loc="lower right")
     plt.tight_layout()
     plt.savefig(out / "costs_scatter.png", dpi=300)
@@ -446,28 +449,24 @@ def anchors_winrate(anchors_path, out):
     df = pd.DataFrame(rows).sort_values("rate")
     n = next(iter(data["anchors"].values()))["games"]
 
-    plt.figure(figsize=(8, 3.2))
-    plt.barh(
-        df["anchor"], df["rate"],
-        xerr=[df["rate"] - df["lo"], df["hi"] - df["rate"]],
-        color="#2a78d6", height=0.55, capsize=4,
-    )
+    plt.figure(figsize=(7.2, 2.4))
     ax = plt.gca()
-    ax.axvline(25, color="#888888", ls="--", lw=1)
-    ax.text(
-        25, 1.02, "chance (25%)",
-        transform=transforms.blended_transform_factory(ax.transData, ax.transAxes),
-        ha="center", color="#666666", fontsize=8.5,
-    )
-    for _, r in df.reset_index().iterrows():
-        plt.annotate(f"{r['rate']:.0f}%", (r["hi"], _), fontsize=9,
-                     textcoords="offset points", xytext=(6, -3))
-    plt.xlim(0, max(df["hi"]) + 8)
-    plt.xlabel("win rate (%), 95% CI")
-    plt.title(
-        f"Scripted-bot anchors vs 3x {data['opponent']} (seat 0), n={n}/anchor",
-        pad=22,
-    )
+    df = df.sort_values("rate", ascending=False).reset_index(drop=True)
+    for i, r in df.iterrows():
+        ax.errorbar(r["rate"], i, xerr=[[r["rate"] - r["lo"]], [r["hi"] - r["rate"]]],
+                    color=THINKING, marker="o", markersize=6, lw=1.4, capsize=0,
+                    ecolor=THINKING)
+    ax.axvline(25, color="#aaa", ls="--", lw=1)
+    ax.annotate("chance (25%)", (25, 1.02), xycoords=("data", "axes fraction"),
+                fontsize=8.5, color="#888", ha="center", va="bottom")
+    ax.set_yticks(range(len(df)), df["anchor"], fontsize=10)
+    ax.set_ylim(len(df) - 0.5, -0.5)
+    ax.set_xlim(-1.5, max(df["hi"]) + 8)
+    ax.set_xlabel(f"win rate (%), 95% CI, n={n} per anchor")
+    ax.spines[["top", "right", "left"]].set_visible(False)
+    ax.grid(axis="x", color="#eee")
+    ax.grid(axis="y", visible=False)
+    ax.tick_params(left=False)
     plt.tight_layout()
     plt.savefig(out / "anchors_winrate.png", dpi=300)
     plt.close()
@@ -723,39 +722,38 @@ def models_vs_anchors(outputs_dir, anchors_path, out, round_dir=None):
     def rel(margin):
         return 100 * (margin - lo) / (hi - lo)
 
-    rows = [
-        (label, sum(values) / len(values), len(values)) for label, values in margins.items()
-    ]
-    rows += [
-        ("alpha_beta (bot)", hi, None),
-        ("value_function (bot)", anchor_margin("value_function"), None),
-        ("victory_point (bot)", lo, None),
-    ]
+    rows = []
+    for label, values in margins.items():
+        mean = sum(values) / len(values)
+        se = (sum((v - mean) ** 2 for v in values) / (len(values) - 1)) ** 0.5 / len(values) ** 0.5
+        rows.append((label, mean, se, len(values)))
     rows.sort(key=lambda r: -r[1])
-    labels = [label for label, _, _ in rows]
-    scores = [rel(margin) for _, margin, _ in rows]
 
-    def bar_color(label, n):
-        if n is None:
-            return "#b0b0b0"
-        return "#2d5f8a" if "(thinking)" in label else "#eb6834"
-    colors = [bar_color(label, n) for label, _, n in rows]
-    plt.figure(figsize=(10, 0.62 * len(rows) + 2.2))
+    plt.figure(figsize=(7.2, 0.34 * len(rows) + 1.6))
     ax = plt.gca()
-    ax.barh(range(len(rows)), scores, color=colors, height=0.62)
-    ax.set_yticks(range(len(rows)), labels, fontsize=11, fontweight="bold")
-    ax.invert_yaxis()
-    for i, (score, (_, _, n)) in enumerate(zip(scores, rows)):
-        games = "" if n is None else f"  ({n} game{'s' if n > 1 else ''})"
-        ax.annotate(
-            f"{score:.0f}%{games}",
-            (score, i), fontsize=10.5, fontweight="bold", va="center",
-            textcoords="offset points", xytext=(7, 0),
-        )
-    ax.set_xlim(min(min(scores) - 6, -5), 115)
-    ax.set_xlabel("mean VP margin, % of expert anchor (0% = victory_point, 100% = alpha_beta)")
-    ax.set_title("Catan leaderboard", pad=30, fontweight="bold")
-    sns.despine(left=True)
+    for i, (label, mean, se, n) in enumerate(rows):
+        color = THINKING if "(thinking)" in label else NONTHINKING
+        ax.errorbar(rel(mean), i, xerr=100 * se / (hi - lo), color=color, marker="o",
+                    markersize=6, lw=1.4, capsize=0, ecolor=color)
+    for value, name in ((hi, "alpha_beta"), (anchor_margin("value_function"), "value_function"),
+                        (lo, "victory_point")):
+        ax.axvline(rel(value), color="#aaa", lw=1, ls="--")
+        ax.annotate(name, (rel(value), 1.02), xycoords=("data", "axes fraction"),
+                    fontsize=8.5, color="#888", ha="center", va="bottom")
+    ax.set_yticks(range(len(rows)),
+                  [f"{label[:-1]}, n={n})" if label.endswith(")") else f"{label} (n={n})"
+                   for label, _, _, n in rows], fontsize=10)
+    ax.set_ylim(len(rows) - 0.5, -0.5)
+    ax.tick_params(left=False)
+    ax.set_xlabel("mean VP margin, % of expert anchor")
+    handles = [plt.Line2D([], [], color=c, marker="o", lw=0, label=l)
+               for c, l in ((THINKING, "thinking"), (NONTHINKING, "non-thinking"))]
+    ax.set_xlim(right=126)
+    ax.legend(handles=handles, frameon=False, fontsize=8.5, handletextpad=0.4,
+              borderpad=0.2, labelspacing=0.4, loc="lower right")
+    ax.spines[["top", "right", "left"]].set_visible(False)
+    ax.grid(axis="x", color="#eee")
+    ax.grid(axis="y", visible=False)
     plt.tight_layout()
     plt.savefig(out / "models_vs_anchors.png", dpi=300)
     plt.close()
