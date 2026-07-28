@@ -122,6 +122,102 @@ def eval_run(outputs_dir, name, episodes=25):
     raise FileNotFoundError(f"no {episodes}-episode run for {name} in {outputs_dir}")
 
 
+def sft_checkpoint_compare(outputs_dir, out):
+    """35B-vs-9B SFT checkpoint curve, computed from the n=25 eval runs."""
+    checkpoints = {
+        "Qwen3.6-35B-A3B": (THINKING, {
+            1000: "sft-35b-1k-nt", 3333: "sft-35b-10k-step26-nt",
+            6667: "sft-35b-10k-step52-nt", 10000: "sft-35b-10k-nt",
+        }),
+        "Qwen3.5-9B": (SFT, {
+            1000: "sft-9b-1k-nt", 3333: "sft-9b-10k-step26-nt",
+            6667: "sft-9b-10k-step52-nt", 10000: "sft-9b-10k-nt",
+        }),
+    }
+    fig, ax = plt.subplots(figsize=(6.4, 4.2))
+    samples = list(checkpoints["Qwen3.5-9B"][1])
+    for label, (color, stages) in checkpoints.items():
+        means, ses = [], []
+        for name in stages.values():
+            rows = list(episode_metrics(eval_run(outputs_dir, name)))
+            margins = [margin for *_, margin, _ in rows]
+            mean = sum(margins) / len(margins)
+            means.append(mean)
+            ses.append((sum((m - mean) ** 2 for m in margins) / (len(margins) - 1)) ** 0.5
+                       / len(margins) ** 0.5)
+        se_line(ax, samples, means, ses, color, label)
+    ax.set_xscale("log")
+    ax.set_xticks(samples, ["1k", "3.3k", "6.7k", "10k"])
+    ax.minorticks_off()
+    ax.margins(y=0.15)
+    paper_axes(ax, "training samples", "VP margin vs best opponent")
+    ax.legend(frameon=False, fontsize=10, loc="lower right")
+    save(out, "sft_checkpoint_curve_compare.png")
+
+
+def _matching_trace(traces_dir, seed, margin):
+    """Finds the game record in a mixed trace dir matching a run's episode outcome."""
+    best = None
+    for path in Path(traces_dir).glob(f"*_s{seed}_*.jsonl"):
+        game = json.loads(path.read_text().splitlines()[0])
+        llm = next(c for c, n in game["seats"].items() if n == "llm")
+        vps = game["outcome"]["final_vps"]
+        got = vps[llm] - max(v for c, v in vps.items() if c != llm)
+        if got == margin and (best is None or path.stat().st_mtime > best[0].stat().st_mtime):
+            best = (path, llm)
+    return best
+
+
+def winner_vs_teacher(outputs_dir, traces_root, out):
+    """Winner-filtered vs teacher-trained vs base at n=25: margin, trades, cities."""
+    models = [
+        ("winner 1k", "sft-35b-winner1k-nt", "winner1k-nt"),
+        ("teacher 1k", "sft-35b-1k-nt", "tinker-1k-nt"),
+        ("base", "qwen36-35b-base-nt", "n10_v2"),
+    ]
+    panels = ["VP margin", "trades per game", "cities per game"]
+    stats = {}
+    for label, name, traces_dir in models:
+        per = {panel: [] for panel in panels}
+        for _, seed, _, margin, _ in episode_metrics(eval_run(outputs_dir, name)):
+            per["VP margin"].append(margin)
+            match = _matching_trace(Path(traces_root) / traces_dir, seed, margin)
+            if match is None:
+                print(f"winner_vs_teacher: {name} seed {seed}: no matching trace")
+                continue
+            path, llm = match
+            trades = cities = 0
+            for line in path.read_text().splitlines()[1:]:
+                d = json.loads(line)
+                if d.get("type") == "decision" and d.get("actor") == llm:
+                    kind = d["legal_actions"][d["chosen_action"]][0]
+                    trades += kind == "MARITIME_TRADE"
+                    cities += kind == "BUILD_CITY"
+            per["trades per game"].append(trades)
+            per["cities per game"].append(cities)
+        stats[label] = per
+
+    fig, axes = plt.subplots(1, len(panels), figsize=(8.4, 2.4), sharey=True)
+    for ax, panel in zip(axes, panels):
+        for i, (label, per) in enumerate(stats.items()):
+            vals = per[panel]
+            mean = sum(vals) / len(vals)
+            se = (sum((v - mean) ** 2 for v in vals) / (len(vals) - 1)) ** 0.5 / len(vals) ** 0.5
+            ax.errorbar(mean, i, xerr=se, color=THINKING, marker="o",
+                        markersize=6, lw=1.4, capsize=0, ecolor=THINKING)
+        ax.set_title(panel, fontsize=10)
+        ax.spines[["top", "right", "left"]].set_visible(False)
+        ax.grid(axis="x", color="#eee")
+        ax.grid(axis="y", visible=False)
+        ax.tick_params(left=False)
+        ax.margins(x=0.25, y=0.35)
+    axes[0].set_yticks(range(len(stats)), list(stats), fontsize=10)
+    axes[0].invert_yaxis()
+    plt.tight_layout()
+    plt.savefig(Path(out) / "winner_vs_teacher_n25.png", dpi=300)
+    plt.close()
+
+
 def sft_scaling(rows, references, out):
     """Margin vs training-data size for the SFT models, with bot reference lines."""
     fig, ax = plt.subplots(figsize=(8, 5.2))
@@ -541,6 +637,8 @@ def main():
         anchors_winrate(args.anchors, out)
         if Path(args.outputs).exists():
             models_vs_anchors(args.outputs, args.anchors, out, args.round)
+    if Path(args.outputs).exists():
+        sft_checkpoint_compare(args.outputs, out)
     print(f"-> {out}")
 
 
