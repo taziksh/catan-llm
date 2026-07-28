@@ -69,9 +69,12 @@ def option_text(action_type, payload, tiles, own_nodes):
         case ActionType.BUILD_CITY:
             return f"upgrade to city at node {payload} (adjacent: {node_text(payload)})"
         case ActionType.BUILD_ROAD:
-            new = [n for n in payload if n not in own_nodes] or list(payload)
-            opens = "; ".join(f"opens node {n}: {node_text(n)}" for n in new)
-            return f"build road {payload[0]}-{payload[1]} ({opens})"
+            # A legal road always touches your network, so at most one node is new.
+            new = [n for n in payload if n not in own_nodes]
+            road = f"build road {payload[0]}-{payload[1]}"
+            if not new:
+                return road
+            return f"{road} (opens node {new[0]}: {node_text(new[0])})"
         case ActionType.MOVE_ROBBER:
             tile, victim = payload
             steal = f", steal from {victim}" if victim else ""
