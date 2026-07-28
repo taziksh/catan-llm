@@ -1,0 +1,39 @@
+max_steps = 939
+
+[model]
+attn = "flash_attention_2"
+seq_len = 4096
+optim_cpu_offload = false
+name = "Qwen/Qwen3.5-9B"
+
+[model.lora]
+rank = 16
+
+[data]
+type = "sft"
+name = "/home/ubuntu/sft_v2_10k"
+seq_len = 4096
+batch_size = 32
+micro_batch_size = 8
+
+[optim]
+lr = 1e-4
+
+[val]
+interval = 50
+
+[val.data]
+type = "sft"
+name = "/home/ubuntu/sft_v2_10k"
+seq_len = 4096
+batch_size = 32
+micro_batch_size = 8
+
+[ckpt]
+interval = 100
+
+[wandb]
+project = "catan-llm"
+name = "sft-9b-10k-lora16"
+group = "sft-ladder-9b"
+tags = ["v2-data"]

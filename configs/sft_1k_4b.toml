@@ -1,0 +1,37 @@
+max_steps = 100
+
+[model]
+seq_len = 4096
+name = "Qwen/Qwen3.5-4B"
+
+[model.lora]
+rank = 16
+
+[data]
+type = "sft"
+name = "/home/ubuntu/sft_1k"
+micro_batch_size = 8
+seq_len = 4096
+batch_size = 32
+
+[optim]
+lr = 1e-4
+
+[ckpt]
+interval = 50
+
+[val]
+interval = 50
+
+[val.data]
+type = "sft"
+name = "/home/ubuntu/sft_1k"
+seq_len = 4096
+batch_size = 32
+micro_batch_size = 8
+
+[wandb]
+project = "catan-llm"
+name = "sft-4b-1k-lora16"
+group = "sft-ladder-4b"
+tags = ["canary", "v1-data"]
