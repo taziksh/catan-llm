@@ -60,6 +60,68 @@ def episode_metrics(run_dir):
             )
 
 
+def dot_panels(entities, panels, out, name, title):
+    """Dot-plot small multiples: one panel per metric, entities on shared rows."""
+    fig, axes = plt.subplots(1, len(panels), figsize=(3.1 * len(panels) + 1.4, 0.62 * len(entities) + 1.9), sharey=True)
+    for ax, (label, values, fmt) in zip(axes, panels):
+        for i, entity in enumerate(entities):
+            vals = values[entity]
+            mean = vals.mean()
+            se = vals.std(ddof=1) / len(vals) ** 0.5 if len(vals) > 1 else 0
+            ax.errorbar(mean, i, xerr=se or None, color=THINKING, marker="o",
+                        markersize=8, capsize=3, lw=1.4, ecolor="#777")
+            ax.annotate(fmt.format(mean), (mean, i), fontsize=9.5, fontweight="bold",
+                        color="#333", ha="center", va="bottom",
+                        textcoords="offset points", xytext=(0, 9))
+        ax.set_title(label, fontsize=10.5, pad=8)
+        ax.spines[["top", "right", "left"]].set_visible(False)
+        ax.grid(axis="x", color="#eee")
+        ax.grid(axis="y", visible=False)
+        ax.tick_params(left=False)
+        ax.margins(x=0.18, y=0.3)
+    axes[0].set_yticks(range(len(entities)), entities, fontsize=10.5, fontweight="bold")
+    axes[0].invert_yaxis()
+    fig.suptitle(title, fontweight="bold", fontsize=13, y=0.98)
+    plt.tight_layout(rect=(0, 0, 1, 0.92))
+    plt.savefig(Path(out) / name, dpi=300)
+    plt.close()
+
+
+def paper_axes(ax, xlabel=None, ylabel=None):
+    """Applies the paper-figure conventions: open spines, y-grid only."""
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.grid(axis="y", color="#eee")
+    ax.grid(axis="x", visible=False)
+    if xlabel:
+        ax.set_xlabel(xlabel)
+    if ylabel:
+        ax.set_ylabel(ylabel)
+
+
+def se_line(ax, x, means, ses, color, label):
+    """Draws a mean line with a shaded ±1 SE band."""
+    ax.plot(x, means, color=color, marker="o", markersize=5, lw=1.8, label=label)
+    ax.fill_between(x, [m - s for m, s in zip(means, ses)],
+                    [m + s for m, s in zip(means, ses)], color=color, alpha=0.15, lw=0)
+
+
+def point_note(ax, x, y, text, color):
+    """Small annotation for a single point that carries the story (e.g. wins)."""
+    ax.annotate(text, (x, y), textcoords="offset points", xytext=(0, 10),
+                ha="center", fontsize=9, color=color)
+
+
+def eval_run(outputs_dir, name, episodes=25):
+    """Returns the newest run dir for a served model with the expected episode count."""
+    runs = sorted(Path(outputs_dir).glob(f"catan_v1--{name}--catan_v1_harness/*"),
+                  key=lambda p: p.stat().st_mtime, reverse=True)
+    for run in runs:
+        traces = run / "traces.jsonl"
+        if traces.exists() and sum(1 for _ in open(traces)) == episodes:
+            return run
+    raise FileNotFoundError(f"no {episodes}-episode run for {name} in {outputs_dir}")
+
+
 def sft_scaling(rows, references, out):
     """Margin vs training-data size for the SFT models, with bot reference lines."""
     fig, ax = plt.subplots(figsize=(8, 5.2))
