@@ -16,7 +16,10 @@ from catan_v1.taskset import SYSTEM_PROMPT
 
 
 def game_samples(game, lines, teacher):
-    color = next((c for c, name in game.seats.items() if name == teacher), None)
+    if teacher == "winner":
+        color = game.outcome.winner
+    else:
+        color = next((c for c, name in game.seats.items() if name == teacher), None)
     if color is None:
         return
     for line in lines:
@@ -38,7 +41,7 @@ def game_samples(game, lines, teacher):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--games", default="data/games")
-    parser.add_argument("--teacher", default="alpha_beta")
+    parser.add_argument("--teacher", default="alpha_beta", help='bot name, or "winner" for each game\'s winning seat')
     parser.add_argument(
         "--val-every",
         type=int,
