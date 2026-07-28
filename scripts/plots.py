@@ -521,12 +521,165 @@ def _load_run(path, round_dir):
                 "label": model + (" (thinking)" if _mode_label(trace) == "thinking" else ""),
                 "seed": trace["info"]["catan"]["seed"],
                 "margin": metrics["vp_margin"] * 10,
+                "win": trace["rewards"]["reward_win"] > 0,
                 "first_party": first_party,
                 "mtime": path.stat().st_mtime,
                 "id": path.parent.name[:8],
             }
         )
     return episodes
+
+
+def _round_episodes(outputs_dir, round_dir):
+    """Selects the best episode per (model, seed): first-party, then newest run."""
+    chosen = {}
+    for path in Path(outputs_dir).glob("*/*/traces.jsonl"):
+        for episode in _load_run(path, round_dir) or []:
+            key = (episode["label"], episode["seed"])
+            best = chosen.get(key)
+            if best and (best["first_party"], best["mtime"]) >= (
+                episode["first_party"], episode["mtime"]
+            ):
+                continue
+            chosen[key] = episode
+    return chosen
+
+
+def thinking_tokens(outputs_dir, out, round_dirs=("n5", "n10_v2")):
+    """Mean thinking-mode output tokens per decision, pooled across eval rounds."""
+    completion, prompts = {}, []
+    for path in Path(outputs_dir).glob("*/*/traces.jsonl"):
+        config_path = path.parent / "config.toml"
+        if not config_path.exists():
+            continue
+        config = tomllib.loads(config_path.read_text())
+        trajectory_dir = config.get("env", {}).get("trajectory_dir", "")
+        if trajectory_dir.rsplit("/", 1)[-1] not in round_dirs:
+            continue
+        for line in path.read_text().splitlines():
+            episode = json.loads(line)
+            if not episode.get("traces"):
+                continue
+            trace = episode["traces"][0]
+            if _mode_label(trace) != "thinking":
+                continue
+            model = trace["agent"]["model"].split("/")[-1].removesuffix(":nitro").lower()
+            model = MODEL_ALIASES.get(model, model)
+            completion.setdefault(model, [])
+            for call in trace.get("calls", []):
+                usage = call.get("usage") or {}
+                tokens = usage.get("completion_tokens") or usage.get("output_tokens")
+                if tokens:
+                    completion[model].append(tokens)
+                    prompts.append(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
+    rows = []
+    for model, tokens in completion.items():
+        if len(tokens) < 50:  # timed-out or fragmentary runs; the prose covers these
+            print(f"thinking_tokens: {model}: only {len(tokens)} usable calls, skipped")
+            continue
+        mean = sum(tokens) / len(tokens)
+        se = (sum((t - mean) ** 2 for t in tokens) / (len(tokens) - 1)) ** 0.5 / len(tokens) ** 0.5
+        rows.append((model, mean, se))
+    rows.sort(key=lambda r: -r[1])
+    limit = 16384 - sum(p for p in prompts if p) / max(1, len([p for p in prompts if p]))
+
+    plt.figure(figsize=(7.2, 0.34 * len(rows) + 1.4))
+    ax = plt.gca()
+    for i, (model, mean, se) in enumerate(rows):
+        ax.errorbar(mean, i, xerr=se, color=THINKING, marker="o",
+                    markersize=6, lw=1.4, capsize=0, ecolor=THINKING)
+    ax.axvline(limit, color="#aaa", ls="--", lw=1)
+    ax.annotate("output limit", (limit, 1.02), xycoords=("data", "axes fraction"),
+                fontsize=8.5, color="#888", ha="center", va="bottom")
+    ax.set_yticks(range(len(rows)), [r[0] for r in rows], fontsize=10)
+    ax.set_ylim(len(rows) - 0.5, -0.5)
+    ax.set_xlim(0, limit * 1.12)
+    ax.set_xlabel("mean thinking-mode output tokens per decision")
+    ax.spines[["top", "right", "left"]].set_visible(False)
+    ax.grid(axis="x", color="#eee")
+    ax.grid(axis="y", visible=False)
+    ax.tick_params(left=False)
+    plt.tight_layout()
+    plt.savefig(Path(out) / "thinking_tokens.png", dpi=300)
+    plt.close()
+
+
+def prompt_v1_v2(outputs_dir, out):
+    """VP margin under prompt v1 vs v2 per model; v2 pooled from its two rounds."""
+    v1 = _round_episodes(outputs_dir, "n5")
+    v2 = {**_round_episodes(outputs_dir, "v2_probe"), **_round_episodes(outputs_dir, "n5_v2")}
+    margins = {}
+    for version, chosen in (("v1", v1), ("v2", v2)):
+        for (label, _), episode in sorted(chosen.items()):
+            margins.setdefault(label, {}).setdefault(version, []).append(episode["margin"])
+    rows = [(label, per) for label, per in margins.items() if "v1" in per and "v2" in per]
+    rows.sort(key=lambda r: r[0])
+
+    plt.figure(figsize=(7.2, 0.42 * len(rows) + 1.4))
+    ax = plt.gca()
+    for i, (label, per) in enumerate(rows):
+        for version, offset, point_color in (("v1", -0.16, "#b0b0b0"), ("v2", 0.16, THINKING)):
+            vals = per[version]
+            mean = sum(vals) / len(vals)
+            se = ((sum((v - mean) ** 2 for v in vals) / (len(vals) - 1)) ** 0.5
+                  / len(vals) ** 0.5 if len(vals) > 1 else 0)
+            ax.errorbar(mean, i + offset, xerr=se or None, color=point_color, marker="o",
+                        markersize=6, lw=1.4, capsize=0, ecolor=point_color)
+    ax.axvline(0, color="#aaa", lw=1)
+    ax.set_yticks(range(len(rows)), [label for label, _ in rows], fontsize=10)
+    ax.set_ylim(len(rows) - 0.5, -0.6)
+    ax.set_xlabel("mean VP margin vs value_function bots, v1 n=5, v2 n=1 unless noted")
+    handles = [plt.Line2D([], [], color=c, marker="o", lw=0, label=l)
+               for c, l in (("#b0b0b0", "prompt v1"), (THINKING, "prompt v2"))]
+    ax.legend(handles=handles, frameon=False, fontsize=8.5, handletextpad=0.4,
+              borderpad=0.2, labelspacing=0.4, loc="upper right")
+    ax.spines[["top", "right", "left"]].set_visible(False)
+    ax.grid(axis="x", color="#eee")
+    ax.grid(axis="y", visible=False)
+    ax.tick_params(left=False)
+    plt.tight_layout()
+    plt.savefig(Path(out) / "prompt_v1_v2.png", dpi=300)
+    plt.close()
+
+
+def models_winrate(outputs_dir, out, round_dir=None):
+    """Win-count leaderboard for the LLM round, Wilson 95% intervals."""
+    wins = {}
+    for (label, _), episode in sorted(_round_episodes(outputs_dir, round_dir).items()):
+        wins.setdefault(label, []).append(episode["win"])
+    rows = []
+    for label, results in wins.items():
+        lo, hi = wilson_interval(sum(results), len(results))
+        rows.append((label, 100 * sum(results) / len(results),
+                     100 * lo, 100 * hi, len(results)))
+    rows.sort(key=lambda r: -r[1])
+
+    plt.figure(figsize=(7.2, 0.34 * len(rows) + 1.4))
+    ax = plt.gca()
+    for i, (label, rate, lo, hi, n) in enumerate(rows):
+        color = THINKING if "(thinking)" in label else NONTHINKING
+        ax.errorbar(rate, i, xerr=[[rate - lo], [hi - rate]], color=color, marker="o",
+                    markersize=6, lw=1.4, capsize=0, ecolor=color)
+    ax.axvline(25, color="#aaa", ls="--", lw=1)
+    ax.annotate("chance (25%)", (25, 1.02), xycoords=("data", "axes fraction"),
+                fontsize=8.5, color="#888", ha="center", va="bottom")
+    ax.set_yticks(range(len(rows)),
+                  [f"{label[:-1]}, n={n})" if label.endswith(")") else f"{label} (n={n})"
+                   for label, _, _, _, n in rows], fontsize=10)
+    ax.set_ylim(len(rows) - 0.5, -0.5)
+    ax.set_xlim(-1.5, max(r[3] for r in rows) + 6)
+    ax.set_xlabel("win rate (%), 95% CI, vs 3x value_function bots")
+    handles = [plt.Line2D([], [], color=c, marker="o", lw=0, label=l)
+               for c, l in ((THINKING, "thinking"), (NONTHINKING, "non-thinking"))]
+    ax.legend(handles=handles, frameon=False, fontsize=8.5, handletextpad=0.4,
+              borderpad=0.2, labelspacing=0.4, loc="lower right")
+    ax.spines[["top", "right", "left"]].set_visible(False)
+    ax.grid(axis="x", color="#eee")
+    ax.grid(axis="y", visible=False)
+    ax.tick_params(left=False)
+    plt.tight_layout()
+    plt.savefig(Path(out) / "models_winrate.png", dpi=300)
+    plt.close()
 
 
 def models_vs_anchors(outputs_dir, anchors_path, out, round_dir=None):
