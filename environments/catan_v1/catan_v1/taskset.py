@@ -21,7 +21,7 @@ from pydantic import Field
 from catan_llm.bots import BOTS, COLORS
 from catan_llm.determinism import EVAL_SEED_LIMIT, check_fixed_hashseed
 from catan_llm.extract import TrajectoryAccumulator, deterministic_game_id, observe_live
-from catan_llm.parse import parse_answer
+from catan_llm.parse import parse_move
 from catan_llm.prompts import PROMPT_VERSION, SYSTEM_PROMPT
 from catan_llm.serialize import observation_to_prompt
 
@@ -85,8 +85,8 @@ class CatanEnv(vf.Env[CatanEnvConfig]):
         asked = [0] * len(seat_kinds)
 
         async def ask(interaction, seat):
-            n = len(game.playable_actions)
-            state = observation_to_prompt(observe_live(game))
+            obs = observe_live(game)
+            state = observation_to_prompt(obs)
             prompt = state
             for _ in range(self.config.invalid_retries + 1):
                 try:
@@ -98,14 +98,14 @@ class CatanEnv(vf.Env[CatanEnvConfig]):
                 if segment.terminated:
                     dropped[seat] += 1
                     return rng.choice(game.playable_actions)
-                index = parse_answer(segment.last_reply or "", n)
+                index = parse_move(segment.last_reply or "", obs.legal_actions)
                 if index is not None:
                     return game.playable_actions[index]
                 # The stateless harness drops history, so a retry restates the
                 # full state alongside the complaint.
                 prompt = (
                     "Your last reply had no valid answer. Reply with "
-                    f'"answer: <option number>" between 0 and {n - 1}.\n\n{state}'
+                    f'"answer: <move id>" using one of the ids listed.\n\n{state}'
                 )
             invalid[seat] += 1
             return rng.choice(game.playable_actions)

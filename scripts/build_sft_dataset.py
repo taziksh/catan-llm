@@ -1,7 +1,7 @@
 """Builds an SFT chat dataset from logged teacher trajectories.
 
 One sample per non-forced teacher decision: the eval prompt as the user
-message, "answer: <chosen index>" as the assistant target. Games are split
+message, "answer: <chosen move id>" as the assistant target. Games are split
 train/val by seed so decisions from one game never span both.
 """
 
@@ -11,7 +11,7 @@ from pathlib import Path
 
 from catan_llm.determinism import EVAL_SEED_LIMIT
 from catan_llm.schema import DecisionRecord, GameRecord
-from catan_llm.serialize import decision_to_prompt
+from catan_llm.serialize import decision_to_prompt, move_id
 from catan_v1.taskset import SYSTEM_PROMPT
 
 
@@ -32,7 +32,7 @@ def game_samples(game, lines, teacher):
                 {"role": "user", "content": decision_to_prompt(game, decision)},
                 {
                     "role": "assistant",
-                    "content": f"answer: {decision.chosen_action}",
+                    "content": f"answer: {move_id(*decision.legal_actions[decision.chosen_action])}",
                 },
             ]
         }

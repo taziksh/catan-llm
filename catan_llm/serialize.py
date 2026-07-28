@@ -1,7 +1,7 @@
 """Renders an Observation as a model prompt.
 
 Stateless: one self-contained prompt per decision. Options keep
-legal_actions order — the index is the training label.
+legal_actions order and are named by move id, which is the training label.
 """
 
 from catan_llm.geometry import NODE_EDGES, NODE_TILES
@@ -47,58 +47,74 @@ def _own_nodes(obs: Observation):
     return nodes
 
 
-def option_text(action_type, payload, tiles, own_nodes):
+def option_note(action_type, payload, tiles, own_nodes):
+    """Board context for an option beyond its move id."""
     def node_text(node):
         return ", ".join(tiles[t] for t in NODE_TILES[node])
 
     match action_type:
-        case ActionType.ROLL:
-            return "roll the dice"
-        case ActionType.END_TURN:
-            return "end turn"
-        case ActionType.BUY_DEVELOPMENT_CARD:
-            return "buy a development card"
-        case ActionType.PLAY_KNIGHT_CARD:
-            return "play knight"
-        case ActionType.PLAY_ROAD_BUILDING:
-            return "play road building"
-        case ActionType.CANCEL_TRADE:
-            return "cancel trade"
-        case ActionType.BUILD_SETTLEMENT:
-            return f"build settlement at node {payload} (adjacent: {node_text(payload)})"
-        case ActionType.BUILD_CITY:
-            return f"upgrade to city at node {payload} (adjacent: {node_text(payload)})"
+        case ActionType.BUILD_SETTLEMENT | ActionType.BUILD_CITY:
+            return f"adjacent: {node_text(payload)}"
         case ActionType.BUILD_ROAD:
             # A legal road always touches your network, so at most one node is new.
             new = [n for n in payload if n not in own_nodes]
-            road = f"build road {payload[0]}-{payload[1]}"
-            if not new:
-                return road
-            return f"{road} (opens node {new[0]}: {node_text(new[0])})"
+            return f"opens node {new[0]}: {node_text(new[0])}" if new else ""
         case ActionType.MOVE_ROBBER:
             tile, victim = payload
-            steal = f", steal from {victim}" if victim else ""
-            return f"move robber to tile {tile} ({tiles[tile]}){steal}"
-        case ActionType.DISCARD_RESOURCE:
-            return f"discard {_word(payload)}"
-        case ActionType.PLAY_MONOPOLY:
-            return f"play monopoly on {_word(payload)}"
-        case ActionType.PLAY_YEAR_OF_PLENTY:
-            return f"play year of plenty for {' + '.join(_word(r) for r in payload)}"
-        case ActionType.MARITIME_TRADE:
-            gives = [r for r in payload[:4] if r is not None]
-            return f"trade {len(gives)} {_word(gives[0])} for 1 {_word(payload[4])}"
+            return tiles[tile] + (f", steal from {victim}" if victim else "")
         case ActionType.OFFER_TRADE:
             return (
-                f"offer trade: give {_freqdeck_text(payload[:5])} "
+                f"give {_freqdeck_text(payload[:5])} "
                 f"for {_freqdeck_text(payload[5:10])}"
             )
+    return ""
+
+
+def move_id(action_type, payload):
+    """Stable identifier for an action, keyed on its schema payload.
+
+    Unlike the option index, a given id names the same move in every state.
+    Ids are unique within a decision's legal_actions.
+    """
+    match action_type:
+        case ActionType.ROLL:
+            return "roll"
+        case ActionType.END_TURN:
+            return "end_turn"
+        case ActionType.BUY_DEVELOPMENT_CARD:
+            return "buy_dev"
+        case ActionType.PLAY_KNIGHT_CARD:
+            return "knight"
+        case ActionType.PLAY_ROAD_BUILDING:
+            return "road_building"
+        case ActionType.CANCEL_TRADE:
+            return "cancel_trade"
         case ActionType.ACCEPT_TRADE:
-            return "accept the trade offer"
+            return "accept_trade"
         case ActionType.REJECT_TRADE:
-            return "reject the trade offer"
+            return "reject_trade"
+        case ActionType.BUILD_SETTLEMENT:
+            return f"settlement:{payload}"
+        case ActionType.BUILD_CITY:
+            return f"city:{payload}"
+        case ActionType.BUILD_ROAD:
+            return f"road:{payload[0]}-{payload[1]}"
+        case ActionType.MOVE_ROBBER:
+            tile, victim = payload
+            return f"robber:{tile}" + (f":{victim}" if victim else "")
+        case ActionType.DISCARD_RESOURCE:
+            return f"discard:{payload}"
+        case ActionType.PLAY_MONOPOLY:
+            return f"monopoly:{payload}"
+        case ActionType.PLAY_YEAR_OF_PLENTY:
+            return "year_of_plenty:" + "+".join(payload)
+        case ActionType.MARITIME_TRADE:
+            gives = [r for r in payload[:4] if r is not None]
+            return f"maritime:{len(gives)}{gives[0]}>{payload[4]}"
+        case ActionType.OFFER_TRADE:
+            return "offer:" + ",".join(str(n) for n in payload)
         case ActionType.CONFIRM_TRADE:
-            return f"confirm trade with {payload[10]}"
+            return "confirm:" + ",".join(str(n) for n in payload)
     raise ValueError(action_type)
 
 
@@ -165,10 +181,10 @@ def observation_to_prompt(obs: Observation) -> str:
     )
     if not obs.trading:
         intro += " No trading between players, but you can trade with the bank/port."
-    options = [
-        f"{i}. {option_text(action_type, payload, tiles, own_nodes)}"
-        for i, (action_type, payload) in enumerate(obs.legal_actions)
-    ]
+    options = []
+    for action_type, payload in obs.legal_actions:
+        note = option_note(action_type, payload, tiles, own_nodes)
+        options.append(move_id(action_type, payload) + (f" ({note})" if note else ""))
     lines = [
         intro,
         f"turn {obs.turn} | phase: {obs.phase.value}",
@@ -183,7 +199,7 @@ def observation_to_prompt(obs: Observation) -> str:
         "YOUR OPTIONS",
         *options,
         "",
-        'Reply with "answer: <option number>".',
+        'Reply with "answer: <move id>".',
     ]
     return "\n".join(lines)
 

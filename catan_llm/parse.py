@@ -2,7 +2,10 @@
 
 import re
 
+from catan_llm.serialize import move_id
+
 ANSWER_RE = re.compile(r"answer\s*:\s*(\d+)", re.IGNORECASE)
+MOVE_RE = re.compile(r"answer\s*:\s*(\S+)", re.IGNORECASE)
 
 
 def parse_answer(text: str, n_options: int):
@@ -17,3 +20,13 @@ def parse_answer(text: str, n_options: int):
             return None
         index = int(last)
     return index if 0 <= index < n_options else None
+
+
+def parse_move(text: str, legal_actions):
+    """Returns the chosen index, or None if unparseable or not a legal move."""
+    ids = {move_id(t, p): i for i, (t, p) in enumerate(legal_actions)}
+    for token in reversed(MOVE_RE.findall(text)):
+        token = token.strip("*`.,;:\"'")
+        if token in ids:
+            return ids[token]
+    return None

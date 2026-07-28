@@ -1,7 +1,7 @@
 """End-to-end catan-v1 rollouts against a scripted local model server.
 
 Runs the real verifiers stack (serving, interception, harness program,
-runtime); the "model" is an HTTP server that always answers "answer: 0".
+runtime). The "model" is an HTTP server that always picks the first option.
 """
 
 import asyncio
@@ -19,6 +19,12 @@ requires_fixed_hashseed = pytest.mark.skipif(
 )
 
 
+def _first_option(messages):
+    prompt = messages[-1]["content"]
+    line = prompt.split("YOUR OPTIONS\n", 1)[1].splitlines()[0]
+    return line.split(" (")[0]
+
+
 class _ScriptedModel(BaseHTTPRequestHandler):
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
@@ -32,7 +38,10 @@ class _ScriptedModel(BaseHTTPRequestHandler):
                 "choices": [
                     {
                         "index": 0,
-                        "message": {"role": "assistant", "content": "answer: 0"},
+                        "message": {
+                            "role": "assistant",
+                            "content": f"answer: {_first_option(body['messages'])}",
+                        },
                         "finish_reason": "stop",
                     }
                 ],
