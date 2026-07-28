@@ -168,10 +168,22 @@ class CatanEnv(vf.Env[CatanEnvConfig]):
             }
 
 
-class CatanTaskset(vf.Taskset[vf.Task[CatanData], vf.TasksetConfig]):
+class CatanTasksetConfig(vf.TasksetConfig):
+    # 0 serves the eval range (seeds < EVAL_SEED_LIMIT). Training runs must set a
+    # start at or above EVAL_SEED_LIMIT so they can never touch an eval board.
+    seed_start: int = 0
+
+
+class CatanTaskset(vf.Taskset[vf.Task[CatanData], CatanTasksetConfig]):
     def load(self) -> Iterator[vf.Task]:
+        start = self.config.seed_start
+        if start:
+            assert start >= EVAL_SEED_LIMIT, (
+                f"seed_start={start} overlaps the eval range (< {EVAL_SEED_LIMIT}); "
+                "training seeds must be >= EVAL_SEED_LIMIT"
+            )
         # Bounded so eval seeds can never cross into the training range.
-        for i in range(EVAL_SEED_LIMIT):
+        for i in range(start, start + EVAL_SEED_LIMIT):
             yield vf.Task(
                 CatanData(idx=i, name=f"game#{i}", prompt=None, info={"seed": i})
             )
