@@ -5,7 +5,7 @@ description = "LLM agents for Settlers of Catan via the catanatron engine"
 requires-python = ">=3.13"
 dependencies = [
     "aiohttp>=3.14.2",
-    "catanatron",
+    "catanatron[web]",
     "pydantic>=2.13.4",
     "scienceplots>=2.2.2",
     "tinker-cookbook",
