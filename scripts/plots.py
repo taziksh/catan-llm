@@ -4,7 +4,7 @@ import argparse
 import json
 import re
 import tomllib
-from math import sqrt
+from math import erfc, sqrt
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -31,6 +31,7 @@ SFT = "#4d8f4f"
 def save(out, name):
     plt.tight_layout()
     plt.savefig(Path(out) / name, dpi=300)
+    plt.savefig((Path(out) / name).with_suffix(".pdf"))
     plt.close()
 
 
@@ -444,32 +445,34 @@ def anchors_winrate(anchors_path, out):
     for name, r in data["anchors"].items():
         lo, hi = wilson_interval(r["wins"], r["games"])
         rows.append(
-            {"anchor": name, "rate": 100 * r["win_rate"], "lo": 100 * lo, "hi": 100 * hi}
+            {"anchor": name, "rate": 100 * r["win_rate"], "lo": 100 * lo, "hi": 100 * hi,
+             "wins": r["wins"], "games": r["games"]}
         )
     df = pd.DataFrame(rows).sort_values("rate")
-    n = next(iter(data["anchors"].values()))["games"]
 
     plt.figure(figsize=(7.2, 2.4))
     ax = plt.gca()
     df = df.sort_values("rate", ascending=False).reset_index(drop=True)
     for i, r in df.iterrows():
-        ax.errorbar(r["rate"], i, xerr=[[r["rate"] - r["lo"]], [r["hi"] - r["rate"]]],
-                    color=THINKING, marker="o", markersize=6, lw=1.4, capsize=0,
-                    ecolor=THINKING)
-    ax.axvline(25, color="#aaa", ls="--", lw=1)
-    ax.annotate("chance (25%)", (25, 1.02), xycoords=("data", "axes fraction"),
-                fontsize=8.5, color="#888", ha="center", va="bottom")
-    ax.set_yticks(range(len(df)), df["anchor"], fontsize=10)
+        ax.plot([r["lo"], r["hi"]], [i, i], color="#d4d4d4", lw=2.2,
+                solid_capstyle="round", zorder=1)
+        ax.plot(r["rate"], i, "o", color=THINKING, markersize=7.5, zorder=2)
+        ax.annotate(f"{r['wins']}/{r['games']}", (r["hi"], i), textcoords="offset points",
+                    xytext=(8, 0), va="center", fontsize=9, color="#999")
+    ax.axvline(25, color="#bbb", ls="--", lw=1, zorder=0)
+    ax.annotate("opponent parity (25%)", (25, 1.02), xycoords=("data", "axes fraction"),
+                fontsize=9, color="#999", ha="center", va="bottom")
+    names = {"alpha_beta": "alpha-beta", "value_function": "value function",
+             "victory_point": "victory point"}
+    ax.set_yticks(range(len(df)), [names.get(a, a) for a in df["anchor"]], fontsize=10)
     ax.set_ylim(len(df) - 0.5, -0.5)
     ax.set_xlim(-1.5, max(df["hi"]) + 8)
-    ax.set_xlabel(f"win rate (%), 95% CI, n={n} per anchor")
+    ax.set_xlabel("win rate (%)")
     ax.spines[["top", "right", "left"]].set_visible(False)
     ax.grid(axis="x", color="#eee")
     ax.grid(axis="y", visible=False)
     ax.tick_params(left=False)
-    plt.tight_layout()
-    plt.savefig(out / "anchors_winrate.png", dpi=300)
-    plt.close()
+    save(out, "anchors_winrate.png")
 
 
 INVALID_GATE = 0.05
@@ -641,44 +644,60 @@ def prompt_v1_v2(outputs_dir, out):
     plt.close()
 
 
-def models_winrate(outputs_dir, out, round_dir=None):
-    """Win-count leaderboard for the LLM round, Wilson 95% intervals."""
-    wins = {}
-    for (label, _), episode in sorted(_round_episodes(outputs_dir, round_dir).items()):
-        wins.setdefault(label, []).append(episode["win"])
+def models_winrate(outputs_dir, out, round_dir=None, anchors_path=None,
+                   sft_round="tinker-10k-nt", fallback_rounds=("n5",)):
+    """Combined win-rate leaderboard: LLM round, SFT checkpoints, bot anchors."""
+    bot_labels = {"alpha_beta": "alpha-beta (bot)", "value_function": "value function (bot)",
+                  "victory_point": "victory point (bot)"}
     rows = []
-    for label, results in wins.items():
-        lo, hi = wilson_interval(sum(results), len(results))
-        rows.append((label, 100 * sum(results) / len(results),
-                     100 * lo, 100 * hi, len(results)))
+
+    def add(label, wins, games, color):
+        lo, hi = wilson_interval(wins, games)
+        rows.append((label, 100 * wins / games, 100 * lo, 100 * hi, wins, games, color))
+
+    for source, is_sft in ((round_dir, False), (sft_round, True),
+                           *((rd, False) for rd in fallback_rounds)):
+        wins = {}
+        for (label, _), episode in sorted(_round_episodes(outputs_dir, source).items()):
+            wins.setdefault(label, []).append(episode["win"])
+        for label, results in wins.items():
+            if label in {r[0] for r in rows}:
+                continue
+            if is_sft:
+                color = SFT
+            else:
+                color = THINKING if "(thinking)" in label else NONTHINKING
+            add(label, sum(results), len(results), color)
+    if anchors_path:
+        anchors = json.loads(Path(anchors_path).read_text())["anchors"]
+        for name, r in anchors.items():
+            add(bot_labels.get(name, name), r["wins"], r["games"], BOT)
     rows.sort(key=lambda r: -r[1])
 
-    plt.figure(figsize=(7.2, 0.34 * len(rows) + 1.4))
+    plt.figure(figsize=(7.2, 0.42 * len(rows) + 1.4))
     ax = plt.gca()
-    for i, (label, rate, lo, hi, n) in enumerate(rows):
-        color = THINKING if "(thinking)" in label else NONTHINKING
-        ax.errorbar(rate, i, xerr=[[rate - lo], [hi - rate]], color=color, marker="o",
-                    markersize=6, lw=1.4, capsize=0, ecolor=color)
-    ax.axvline(25, color="#aaa", ls="--", lw=1)
-    ax.annotate("chance (25%)", (25, 1.02), xycoords=("data", "axes fraction"),
-                fontsize=8.5, color="#888", ha="center", va="bottom")
-    ax.set_yticks(range(len(rows)),
-                  [f"{label[:-1]}, n={n})" if label.endswith(")") else f"{label} (n={n})"
-                   for label, _, _, _, n in rows], fontsize=10)
+    for i, (label, rate, lo, hi, wins, games, color) in enumerate(rows):
+        ax.plot([lo, hi], [i, i], color="#d4d4d4", lw=2.2, solid_capstyle="round", zorder=1)
+        ax.plot(rate, i, "o", color=color, markersize=7.5, zorder=2)
+        ax.annotate(f"{wins}/{games}", (hi, i), textcoords="offset points", xytext=(8, 0),
+                    va="center", fontsize=9, color="#999")
+    ax.axvline(25, color="#bbb", ls="--", lw=1, zorder=0)
+    ax.annotate("opponent parity (25%)", (25, 1.02), xycoords=("data", "axes fraction"),
+                fontsize=9, color="#999", ha="center", va="bottom")
+    ax.set_yticks(range(len(rows)), [r[0] for r in rows], fontsize=10)
     ax.set_ylim(len(rows) - 0.5, -0.5)
-    ax.set_xlim(-1.5, max(r[3] for r in rows) + 6)
-    ax.set_xlabel("win rate (%), 95% CI, vs 3x value_function bots")
+    ax.set_xlim(-1.5, max(r[3] for r in rows) + 10)
+    ax.set_xlabel("win rate (%)")
     handles = [plt.Line2D([], [], color=c, marker="o", lw=0, label=l)
-               for c, l in ((THINKING, "thinking"), (NONTHINKING, "non-thinking"))]
-    ax.legend(handles=handles, frameon=False, fontsize=8.5, handletextpad=0.4,
-              borderpad=0.2, labelspacing=0.4, loc="lower right")
+               for c, l in ((THINKING, "thinking"), (NONTHINKING, "non-thinking"),
+                            (SFT, "SFT finetune"), (BOT, "scripted bot"))]
+    ax.legend(handles=handles, frameon=False, fontsize=9, handletextpad=0.4,
+              borderpad=0.2, labelspacing=0.5, loc="lower right")
     ax.spines[["top", "right", "left"]].set_visible(False)
-    ax.grid(axis="x", color="#eee")
+    ax.grid(axis="x", color="#f0f0f0")
     ax.grid(axis="y", visible=False)
     ax.tick_params(left=False)
-    plt.tight_layout()
-    plt.savefig(Path(out) / "models_winrate.png", dpi=300)
-    plt.close()
+    save(out, "models_winrate.png")
 
 
 def models_vs_anchors(outputs_dir, anchors_path, out, round_dir=None):
@@ -729,34 +748,145 @@ def models_vs_anchors(outputs_dir, anchors_path, out, round_dir=None):
         rows.append((label, mean, se, len(values)))
     rows.sort(key=lambda r: -r[1])
 
-    plt.figure(figsize=(7.2, 0.34 * len(rows) + 1.6))
+    plt.figure(figsize=(7.2, 0.42 * len(rows) + 1.6))
     ax = plt.gca()
+    default_n = max(r[3] for r in rows)
     for i, (label, mean, se, n) in enumerate(rows):
         color = THINKING if "(thinking)" in label else NONTHINKING
-        ax.errorbar(rel(mean), i, xerr=100 * se / (hi - lo), color=color, marker="o",
-                    markersize=6, lw=1.4, capsize=0, ecolor=color)
-    for value, name in ((hi, "alpha_beta"), (anchor_margin("value_function"), "value_function"),
-                        (lo, "victory_point")):
-        ax.axvline(rel(value), color="#aaa", lw=1, ls="--")
+        half = 100 * 1.96 * se / (hi - lo)
+        ax.plot([rel(mean) - half, rel(mean) + half], [i, i], color="#d4d4d4", lw=2.2,
+                solid_capstyle="round", zorder=1)
+        ax.plot(rel(mean), i, "o", color=color, markersize=7.5, zorder=2)
+        if n != default_n:
+            ax.annotate(f"n={n}", (rel(mean) + half, i), textcoords="offset points",
+                        xytext=(8, 0), va="center", fontsize=9, color="#999")
+    for value, name in ((hi, "alpha-beta"), (anchor_margin("value_function"), "value function"),
+                        (lo, "victory point")):
+        ax.axvline(rel(value), color="#bbb", lw=1, ls="--", zorder=0)
         ax.annotate(name, (rel(value), 1.02), xycoords=("data", "axes fraction"),
-                    fontsize=8.5, color="#888", ha="center", va="bottom")
-    ax.set_yticks(range(len(rows)),
-                  [f"{label[:-1]}, n={n})" if label.endswith(")") else f"{label} (n={n})"
-                   for label, _, _, n in rows], fontsize=10)
+                    fontsize=9, color="#999", ha="center", va="bottom")
+    ax.set_yticks(range(len(rows)), [r[0] for r in rows], fontsize=10)
     ax.set_ylim(len(rows) - 0.5, -0.5)
     ax.tick_params(left=False)
     ax.set_xlabel("mean VP margin, % of expert anchor")
     handles = [plt.Line2D([], [], color=c, marker="o", lw=0, label=l)
                for c, l in ((THINKING, "thinking"), (NONTHINKING, "non-thinking"))]
-    ax.set_xlim(right=126)
-    ax.legend(handles=handles, frameon=False, fontsize=8.5, handletextpad=0.4,
-              borderpad=0.2, labelspacing=0.4, loc="lower right")
+    ax.set_xlim(right=max(rel(mean) + 100 * 1.96 * se / (hi - lo)
+                          for _, mean, se, _ in rows) + 10)
+    ax.legend(handles=handles, frameon=False, fontsize=9, handletextpad=0.4,
+              borderpad=0.2, labelspacing=0.5, loc="lower right")
     ax.spines[["top", "right", "left"]].set_visible(False)
-    ax.grid(axis="x", color="#eee")
+    ax.grid(axis="x", color="#f0f0f0")
     ax.grid(axis="y", visible=False)
-    plt.tight_layout()
-    plt.savefig(out / "models_vs_anchors.png", dpi=300)
-    plt.close()
+    save(out, "models_vs_anchors.png")
+
+
+def _pod_run_margins(outputs_dir, model, greedy, episodes):
+    """Collects per-game VP margins and wins from pod-served runs matching the cell."""
+    rows = []
+    for run in Path(outputs_dir).glob(f"catan_v1--{model}--catan_v1_harness/*"):
+        config = run / "config.toml"
+        traces = run / "traces.jsonl"
+        if not config.exists() or not traces.exists():
+            continue
+        cfg = tomllib.loads(config.read_text())
+        if "runpod" not in cfg.get("client", {}).get("base_url", ""):
+            continue
+        if cfg.get("num_rollouts", 1) != 1:
+            continue
+        temp = cfg.get("sampling", {}).get("temperature")
+        if greedy != (temp == 0):
+            continue
+        if sum(1 for _ in open(traces)) != episodes:
+            continue
+        margins, wins = [], 0
+        for line in open(traces):
+            for trace in json.loads(line)["traces"]:
+                margins.append(trace["metrics"]["vp_margin"] * 10)
+                wins += trace["rewards"]["reward_win"] > 0
+        rows.append((run.stat().st_mtime, margins, wins))
+    if not rows:
+        raise FileNotFoundError(f"no pod run for {model} greedy={greedy} n={episodes}")
+    return max(rows)[1:]
+
+
+def dagger_stack_compare(outputs_dir, out):
+    """dagger2 vs 10k BC on the pod stack, greedy and sampled decoding."""
+    cells = {
+        ("10k BC", "greedy"): ("sft-9b-10k-nt", True, 25),
+        ("10k BC", "temp 1.0"): ("sft-9b-10k-nt", False, 25),
+        ("dagger2", "greedy"): ("sft-9b-dagger2-nt", True, 100),
+        ("dagger2", "temp 1.0"): ("sft-9b-dagger2-nt", False, 25),
+    }
+    colors = {"10k BC": THINKING, "dagger2": SFT}
+    offsets = {"10k BC": -0.13, "dagger2": 0.13}
+    conditions = ["greedy", "temp 1.0"]
+    fig, ax = plt.subplots(figsize=(5.6, 4.0))
+    stats = {}
+    for (model, condition), (name, greedy, episodes) in cells.items():
+        margins, wins = _pod_run_margins(outputs_dir, name, greedy, episodes)
+        mean = sum(margins) / len(margins)
+        se = (sum((m - mean) ** 2 for m in margins) / (len(margins) - 1)) ** 0.5 / len(margins) ** 0.5
+        stats[model, condition] = (mean, se)
+        x = conditions.index(condition) + offsets[model]
+        ax.errorbar(x, mean, yerr=se, color=colors[model], marker="o", markersize=8,
+                    capsize=3, lw=1.6, label=model if condition == "greedy" else None)
+        note = f"n={len(margins)}"
+        if wins:
+            note += f", {wins} win" + ("s" if wins > 1 else "")
+        point_note(ax, x, mean + se, note, colors[model])
+    (m_new, se_new), (m_old, se_old) = stats["dagger2", "greedy"], stats["10k BC", "greedy"]
+    t = (m_new - m_old) / (se_new**2 + se_old**2) ** 0.5
+    p = erfc(t / sqrt(2))
+    ax.text(0.97, 0.97, f"greedy gap +{m_new - m_old:.1f} VP\np = {p:.1e}",
+            transform=ax.transAxes, ha="right", va="top", fontsize=10, color="#333")
+    ax.set_xticks(range(len(conditions)), conditions)
+    ax.set_xlim(-0.5, 1.5)
+    ax.margins(y=0.2)
+    paper_axes(ax, ylabel="VP margin vs best opponent")
+    ax.legend(frameon=False, fontsize=10, loc="lower left")
+    save(out, "dagger2_stack_compare.png")
+
+
+def dagger_agreement_by_type(out):
+    """Teacher agreement per move type, dagger2 vs 10k BC, same stack and decoding."""
+    import collections
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).parent))
+    from catan_llm.bots import BOTS
+    from teacher_agreement import replay_game
+
+    def per_type(traj_dir):
+        rates = collections.defaultdict(lambda: [0, 0])
+        for path in sorted(Path(traj_dir).glob("*.jsonl")):
+            for replayed, teacher_action in replay_game(path, BOTS["alpha_beta"]):
+                decision = replayed.decision
+                chosen = decision.legal_actions[decision.chosen_action]
+                rates[chosen[0].value][0] += int(teacher_action == chosen)
+                rates[chosen[0].value][1] += 1
+        return rates
+
+    old = per_type("data/eval_traces/10k-crosscheck")
+    new = per_type("data/eval_traces/dagger2-verdict")
+    types = [t for t in old if old[t][1] >= 20 and new.get(t, [0, 0])[1] >= 20]
+    rows = sorted(types, key=lambda t: new[t][0] / new[t][1] - old[t][0] / old[t][1])
+    fig, ax = plt.subplots(figsize=(6.2, 0.5 * len(rows) + 1.6))
+    for i, t in enumerate(rows):
+        a = 100 * old[t][0] / old[t][1]
+        b = 100 * new[t][0] / new[t][1]
+        ax.plot([a, b], [i, i], color="#bbb", lw=1.4, zorder=1)
+        ax.plot(a, i, "o", color=THINKING, markersize=8, zorder=2)
+        ax.plot(b, i, "o", color=SFT, markersize=8, zorder=2)
+        ax.annotate(f"{b - a:+.0f}", (max(a, b), i), textcoords="offset points",
+                    xytext=(10, -3), fontsize=9, color="#333")
+    ax.set_yticks(range(len(rows)), [t.lower() for t in rows], fontsize=10)
+    ax.margins(x=0.12, y=0.08)
+    paper_axes(ax, xlabel="agreement with alpha_beta (%)")
+    ax.plot([], [], "o", color=THINKING, label="10k BC")
+    ax.plot([], [], "o", color=SFT, label="dagger2")
+    ax.legend(frameon=False, fontsize=10, loc="lower right")
+    save(out, "dagger2_agreement_by_type.png")
 
 
 def main():
@@ -771,10 +901,20 @@ def main():
     parser.add_argument("--outputs", default="outputs")
     parser.add_argument("--round", default="n5")
     parser.add_argument("--out", default="data/plots")
+    parser.add_argument(
+        "--dagger",
+        action="store_true",
+        help="render only the dagger comparison charts (the agreement replay is slow)",
+    )
     args = parser.parse_args()
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
+    if args.dagger:
+        dagger_stack_compare(args.outputs, out)
+        dagger_agreement_by_type(out)
+        print(f"-> {out}")
+        return
     bench = json.loads(Path(args.benchmark).read_text())
     winrate_matrix(bench, out)
     winrate_ci(bench, out)
@@ -788,6 +928,7 @@ def main():
         anchors_winrate(args.anchors, out)
         if Path(args.outputs).exists():
             models_vs_anchors(args.outputs, args.anchors, out, args.round)
+            models_winrate(args.outputs, out, args.round, args.anchors)
     if Path(args.outputs).exists():
         sft_checkpoint_compare(args.outputs, out)
     print(f"-> {out}")
