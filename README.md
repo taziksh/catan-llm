@@ -368,9 +368,10 @@ They both obtained a similar score on the decisions -- 9B, 61.7% +-1.4, 35B, 61.
 **FIGHT CLUB**
 Next, I pitted the models against each other. Specifically, we had the two models play the same 4p games, fixing 2 seats with `value_function` bots. We varied the seat order to control for its impact.
 
-This time, 9B ranked higher in 12 games, 35B in 13, and they tied in one. It's worth noting that in absolute terms, 35B is the clear winner here -- with 6 actual wins vs 9B's single.
+Overall, 9B keeps on improving after further samples, so we go with it.
 
-Because of the fewer active params, 35B also trains cheaper! So we got with Qwen-3.6-35B-A3B for our remaining finetuning runs.
+![SFT scaling, 9B vs 35B](assets/sft_scaling.png)
+
 
 **qualitative analysis**
 
@@ -410,9 +411,13 @@ some ideas:
 - train it with reasoning traces
 - train it with reinforcement learning with reward signals, so it learns correct moves, and not just the final ....? hang on, does it learn the decision per turn? TODO, ask LM
 
-there is some preliminary evidence that SFT plateaus after training on just 3.3k samples, which is about 50 games (check exact number). val/loss keeps going down, but the model doesn't improve at the game. this is true as assessed by both overall wins, and auxiliary stats (how many VP points it earns, and its overall rank). Note how 1k -> 3.3k is a noticeable jump, but it sort of plateaus after.
+there is some preliminary evidence, on the 35B MoE, that SFT plateaus after training on just 3.3k samples, which is about 50 games (check exact number). val/loss keeps going down, but the model doesn't improve at the game. this is true as assessed by both overall wins, and auxiliary stats (how many VP points it earns, and its overall rank). Note how 1k -> 3.3k is a noticeable jump, but it sort of plateaus after.
 
 ![SFT performance per checkpoint](assets/sft_checkpoint_curve.png)
+
+This is NOT The case for our 9B model, however
+
+![SFT checkpoint curve, 9B vs 35B](assets/sft_checkpoint_curve_compare.png)
 
 We must now decide: 
 - Do we adjust our SFT training setup? OR
