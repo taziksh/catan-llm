@@ -65,13 +65,24 @@ Open the printed /replays link.
 ### serializer
 Serializer translates engine to a prompt for the LLM.
 
-This is what the model sees:
-<EXAMPLE_PROMPT>
-
 - We start with a fresh context window per decision
-- The model is presented with legal moves in a numbered list
+- The model is presented with legal moves using stable ids, e.g. `settlement:15`
 - We map the board graph into a serialized text format:
 tiles: [`tile_id:resource-dice_number`, ...]
+
+### environment
+We package our environment with Prime Intellect's verifiers library:
+
+verifiers separates a rollout into:
+
+- `Taskset`: defines the work, here a set of seeded Catan games
+- `Harness`: program that interacts with the model
+- `Runtime`: where the harness runs, locally or in a sandbox
+- `Agent`: model + harness + runtime configuration
+- `Env`: connects the taskset and agents, and owns the game loop
+- `Trace`: stores model interactions, rewards, metrics, and run metadata
+
+Each episode is a complete Catan game. The environment advances bots and forced actions itself, and only calls an agent when it has a meaningful decision. Our harness is stateless, so each decision receives the system prompt and current game snapshot without seeing prior moves.
 
 ### reward 
 How does the model know it's doing well? Win/lose is too sparse and delayed of a reward signal by itself. We thus introduce VP as an additional reward term...
