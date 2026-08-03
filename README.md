@@ -38,9 +38,11 @@
 - [x] benchmark: pass rate
 - [ ] is sft platueaing?
 - [x] study: grpo
+- [x] opd / dagger
+- [ ] dpo
 - [ ] rl: grpo
 - [ ] look at gameplay transcripts
-- [ ] game replay frontend 
+- [x] game replay frontend 
 - [ ] experiment: 4-player mirror play
 
 ### scripted policies
@@ -48,6 +50,17 @@ Try policies in [leaderboard](https://docs.catanatron.com/advanced/making-catana
 
 ### trajectory 
 Schema is defined in `catan_llm/schema.py`.
+
+### replay
+Watch any logged game in catanatron's web UI.
+
+```
+python scripts/replay_to_ui.py data/eval_traces/<run>/<game>.jsonl
+DATABASE_URL=sqlite:///$PWD/data/replays.sqlite flask --app catanatron.web run --port 5001
+npm start --prefix ../catanatron/ui
+```
+
+Open the printed /replays link.
 
 ### serializer
 Serializer translates engine to a prompt for the LLM.
