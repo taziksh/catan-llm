@@ -268,17 +268,23 @@ dev = [
 
 [[package]]
 name = "catan-v1"
-version = "0.1.0"
+version = "0.1.3"
 source = { editable = "environments/catan_v1" }
 dependencies = [
-    { name = "catan-llm" },
+    { name = "aiohttp" },
+    { name = "catanatron" },
+    { name = "datasets" },
+    { name = "pydantic" },
     { name = "verifiers" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "catan-llm", editable = "." },
-    { name = "verifiers", git = "https://github.com/PrimeIntellect-ai/verifiers.git" },
+    { name = "aiohttp", specifier = ">=3.14.2" },
+    { name = "catanatron", git = "https://github.com/taziksh/catanatron.git?rev=89e9397e05ed02d56c911f90ca199a0e382c2eb4" },
+    { name = "datasets", specifier = ">=4.5.0" },
+    { name = "pydantic", specifier = ">=2.13.4" },
+    { name = "verifiers", git = "https://github.com/PrimeIntellect-ai/verifiers.git?rev=b8636f925291efb72bc1c92652eb559668c76d4a" },
 ]
 
 [[package]]

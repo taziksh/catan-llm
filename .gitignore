@@ -8,3 +8,7 @@ data/
 .env
 outputs/
 wandb/
+
+# Generated Prime environment state
+/environments/catan_v1/catan_llm/
+/environments/*/.prime/.env-metadata.json

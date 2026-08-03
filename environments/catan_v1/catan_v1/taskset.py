@@ -1,14 +1,9 @@
-"""catan-v1: seeded Settlers of Catan with LLM seats vs scripted bots or self-play.
-
-One rollout is one full game. Scripted seats decide host-side, LLM seats get a
-self-contained state prompt per decision and answer with an option index.
-"""
+"""Verifiers v1 taskset and environment for complete Catan games."""
 
 import random
-import subprocess
+from collections.abc import Iterator
 from contextlib import AsyncExitStack
-from pathlib import Path
-from typing import Iterator
+from importlib.metadata import PackageNotFoundError, version
 from uuid import uuid4
 
 import verifiers.v1 as vf
@@ -16,7 +11,7 @@ from catanatron import Game
 from catanatron.game import TURNS_LIMIT
 from catanatron.models.player import Player as EnginePlayer
 from catanatron.state_functions import get_actual_victory_points
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from catan_llm.bots import BOTS, COLORS
 from catan_llm.determinism import EVAL_SEED_LIMIT, check_fixed_hashseed
@@ -25,18 +20,56 @@ from catan_llm.parse import parse_move
 from catan_llm.prompts import PROMPT_VERSION, SYSTEM_PROMPT
 from catan_llm.serialize import observation_to_prompt
 
-def _env_commit():
+AGENT_SEAT = "agent"
+DEFAULT_SEATS = "agent,value_function,value_function,value_function"
+
+
+def _environment_version() -> str:
     try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"],
-            capture_output=True, text=True, cwd=Path(__file__).parent, timeout=5,
+        return version("catan-v1")
+    except PackageNotFoundError:
+        return "development"
+
+
+ENV_VERSION = _environment_version()
+
+
+def parse_seat_kinds(
+    seats: str, *, required_agents: int | None = None
+) -> tuple[str, ...]:
+    """Parse and validate a four-seat lineup."""
+    seat_kinds = tuple(kind.strip() for kind in seats.split(","))
+    if len(seat_kinds) != len(COLORS):
+        raise ValueError("seats must contain exactly four comma-separated entries")
+
+    unknown = sorted(set(seat_kinds) - {AGENT_SEAT, *BOTS})
+    if unknown:
+        raise ValueError(f"unknown seat kind(s): {', '.join(unknown)}")
+
+    agent_count = seat_kinds.count(AGENT_SEAT)
+    if required_agents is None and agent_count == 0:
+        raise ValueError("seats must contain at least one agent")
+    if required_agents is not None and agent_count != required_agents:
+        count = "one" if required_agents == 1 else str(required_agents)
+        raise ValueError(f"seats must contain exactly {count} agent seat")
+    return seat_kinds
+
+
+def validate_seed_range(seed_start: int, num_seeds: int) -> None:
+    """Keep evaluation seeds below the training boundary."""
+    if seed_start < 0:
+        raise ValueError("seed_start must be non-negative")
+    if num_seeds < 1:
+        raise ValueError("num_seeds must be at least 1")
+    if 0 < seed_start < EVAL_SEED_LIMIT:
+        raise ValueError(
+            f"seed_start={seed_start} overlaps eval seeds below {EVAL_SEED_LIMIT}"
         )
-        return result.stdout.strip() or "unknown"
-    except OSError:
-        return "unknown"
+    if seed_start == 0 and num_seeds > EVAL_SEED_LIMIT:
+        raise ValueError(
+            f"evaluation range crosses into training seeds at {EVAL_SEED_LIMIT}"
+        )
 
-
-ENV_COMMIT = _env_commit()
 
 class LlmPlayer(EnginePlayer):
     """Seat driven by the env, the engine never calls decide()."""
@@ -46,32 +79,36 @@ class LlmPlayer(EnginePlayer):
 
 
 class CatanData(vf.TaskData):
-    info: dict  # {"seed": int}
+    info: dict[str, int]
 
 
 class CatanEnvConfig(vf.EnvConfig):
-    seats: str = "agent,value_function,value_function,value_function"  # per seat: "agent" | BOTS key
+    seats: str = DEFAULT_SEATS
     player0: vf.AgentConfig = vf.AgentConfig(harness={"id": "catan_v1_harness"})
     player1: vf.AgentConfig = vf.AgentConfig(harness={"id": "catan_v1_harness"})
     player2: vf.AgentConfig = vf.AgentConfig(harness={"id": "catan_v1_harness"})
     player3: vf.AgentConfig = vf.AgentConfig(harness={"id": "catan_v1_harness"})
     invalid_retries: int = Field(1, ge=0)
-    vp_coef: float = 0.1  # weight of reward_vp = min(vps, 10) / 10
+    vp_coef: float = Field(0.1, ge=0.0)
     trajectory_dir: str | None = None
     system_prompt: str | None = None
+
+    @field_validator("seats")
+    @classmethod
+    def validate_seats(cls, seats: str) -> str:
+        return ",".join(parse_seat_kinds(seats))
 
 
 class CatanEnv(vf.Env[CatanEnvConfig]):
     async def run(self, task, agents):
         check_fixed_hashseed()
         seed = task.data.info["seed"]
-        seat_kinds = self.config.seats.split(",")
+        seat_kinds = parse_seat_kinds(self.config.seats)
         engine_players = [
-            LlmPlayer(COLORS[i]) if kind == "agent" else BOTS[kind](COLORS[i])
+            LlmPlayer(COLORS[i]) if kind == AGENT_SEAT else BOTS[kind](COLORS[i])
             for i, kind in enumerate(seat_kinds)
         ]
         game = Game(engine_players, seed=seed)
-        # Rollouts of one seed differ, so each needs a unique trajectory file.
         game.id = f"{deterministic_game_id(game)}_{uuid4().hex[:8]}"
         rng = random.Random(seed)
         accumulator = None
@@ -101,8 +138,6 @@ class CatanEnv(vf.Env[CatanEnvConfig]):
                 index = parse_move(segment.last_reply or "", obs.legal_actions)
                 if index is not None:
                     return game.playable_actions[index]
-                # The stateless harness drops history, so a retry restates the
-                # full state alongside the complaint.
                 prompt = (
                     "Your last reply had no valid answer. Reply with "
                     f'"answer: <move id>" using one of the ids listed.\n\n{state}'
@@ -113,7 +148,7 @@ class CatanEnv(vf.Env[CatanEnvConfig]):
         async with AsyncExitStack() as stack:
             interactions = {}
             for i, kind in enumerate(seat_kinds):
-                if kind == "agent":
+                if kind == AGENT_SEAT:
                     seat_task = vf.Task(
                         vf.TaskData(
                             idx=task.data.idx,
@@ -136,20 +171,25 @@ class CatanEnv(vf.Env[CatanEnvConfig]):
                     action = game.playable_actions[0]
                 else:
                     action = current.decide(game, game.playable_actions)
-                if accumulator:
+                if accumulator is not None:
                     accumulator.step(game, action)
                 game.execute(action)
 
-        if accumulator:
+        if accumulator is not None:
             accumulator.after(game)
         winner = game.winning_color()
-        final_vps = {c: get_actual_victory_points(game.state, c) for c in game.state.colors}
+        final_vps = {
+            color: get_actual_victory_points(game.state, color)
+            for color in game.state.colors
+        }
         for i, interaction in interactions.items():
             color = engine_players[i].color
             vps = final_vps[color]
             trace = interaction.trace
             trace.record_reward("reward_win", float(winner == color))
-            trace.record_reward("reward_vp", min(vps, 10) / 10, weight=self.config.vp_coef)
+            trace.record_reward(
+                "reward_vp", min(vps, 10) / 10, weight=self.config.vp_coef
+            )
             trace.record_metric("invalid_rate", invalid[i] / max(asked[i], 1))
             trace.record_metric("dropped_rate", dropped[i] / max(asked[i], 1))
             trace.record_metric("truncated", float(winner is None))
@@ -157,14 +197,15 @@ class CatanEnv(vf.Env[CatanEnvConfig]):
             trace.record_metric("decisions", float(asked[i]))
             trace.record_metric("rank", 1.0 + sum(v > vps for v in final_vps.values()))
             trace.record_metric(
-                "vp_margin", (vps - max(v for c, v in final_vps.items() if c != color)) / 10
+                "vp_margin",
+                (vps - max(v for c, v in final_vps.items() if c != color)) / 10,
             )
             trace.info["catan"] = {
                 "seat": i,
                 "color": color.value,
                 "turn_position": game.state.colors.index(color),
                 "game_id": game.id,
-                "env_commit": ENV_COMMIT,
+                "env_version": ENV_VERSION,
                 "prompt_version": PROMPT_VERSION,
                 "seed": seed,
                 "turns": game.state.num_turns,
@@ -173,20 +214,18 @@ class CatanEnv(vf.Env[CatanEnvConfig]):
 
 
 class CatanTasksetConfig(vf.TasksetConfig):
-    # 0 serves the eval range (seeds < EVAL_SEED_LIMIT). Training runs must set a
-    # start at or above EVAL_SEED_LIMIT so they can never touch an eval board.
-    seed_start: int = 0
+    seed_start: int = Field(0, ge=0)
+
+    @field_validator("seed_start")
+    @classmethod
+    def validate_seed_start(cls, seed_start: int) -> int:
+        validate_seed_range(seed_start, EVAL_SEED_LIMIT)
+        return seed_start
 
 
 class CatanTaskset(vf.Taskset[vf.Task[CatanData], CatanTasksetConfig]):
     def load(self) -> Iterator[vf.Task]:
         start = self.config.seed_start
-        if start:
-            assert start >= EVAL_SEED_LIMIT, (
-                f"seed_start={start} overlaps the eval range (< {EVAL_SEED_LIMIT}); "
-                "training seeds must be >= EVAL_SEED_LIMIT"
-            )
-        # Bounded so eval seeds can never cross into the training range.
         for i in range(start, start + EVAL_SEED_LIMIT):
             yield vf.Task(
                 CatanData(idx=i, name=f"game#{i}", prompt=None, info={"seed": i})
