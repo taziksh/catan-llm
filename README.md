@@ -451,6 +451,8 @@ TODO: link to gif here too
 
 This is a pretty core component of how Group Relative Policy Optimization (GRPO) works. 
 
+**GRPO: theory**
+
 GRPO samples multiple outputs from our *current model*, and treats the average reward of these as a baseline. Later, any result that is greater than this average is a positive "advantage", and anything below is a negative "advantange".
 
 $$A_i = \frac{r_i - \text{mean}(\{r_1, r_2, \cdots, r_G\})}{\text{std}(\{r_1, r_2, \cdots, r_G\})}$$
@@ -479,7 +481,26 @@ We can get a sense of how "difficult" a board is for the model by calculating it
 
 To evaluate the pass rate, we do 8 rollouts over 8 distinct game boards, for a total of 64games. We use our 9B model finetuned on 10K samples. The sampling temperature is 1.0, to match what the RL trainer will use during its rollouts. This just means the model uses the probabilities learned during training.
 
+So far we had 3/64 wins. Five of the eight boards had zero wins, across eight rollouts. GRPO won't learn very much from this. Our SFT setup above is known in the literature as imitation learning, or behavioral cloning. Let's try to improve on our policy.
 
+**opd**
+A major issue with naive imitation learning, is that it doesn't correct for the fact that the student model will make mistakes that the teacher does *not* make, thus putting it in states that its training distribution (from the teacher) would've never exposed it to! In fact, this probability only gets worse with each additional timestep.
+
+How do we make this less of a problem? Well, we could ask the teacher what it would've played in the states the student ends up in. This idea was introduced by [Ross et al](https://arxiv.org/pdf/1011.0686) as DAGGER, and has recently been revisited in LLM post-training as on-policy distillation, by [Thinking Machines](https://thinkingmachines.ai/blog/on-policy-distillation/)
+
+We apply OPD in our setting by getting the teacher model to replay the student's games, and taking the union of that with our original dataset to obtain a new corpus (DAGGER = dataset aggregation)
+
+We start with our 10K checkpoint from earlier, and have the student play 150 full games on training seeds (10,000+). Then, we have the teacher (alpha_beta) replay the games. We skip decisions that only had a single forced option. We take the 3k decisions and use it to create the new dataset of ~13k decisions.
+
+As a side note, we discovered first-hand just how much the configuration and minutae of serving infrastructure influences model performance. Tinker's API led to our model scoring -4.28 on average; while our vLLM on a rented Runpod A40 scores -7.28. Qualitatively, we realized that some of our own model's outputs were simply invalid. In addition, the serving script we wrote for Tinker was silently defaulting to the greedy approach i.e. always choose the top token (temp=0.0), while vLLM defaults to temp=1.0. We re-ran the vLLM eval at temp=0.0 and got roughly the same score, so the temperature isn't what's causing the -4.28 vs -7.28 gap.
+
+...
+
+ We are ultimately bottlenecked in terms of the teacher's own limitations. One great example of this is playing dev cards. alpha_beta only buys a dev card 1.5% of the turns that it legally could and we see this transfer over to our trained model.
+
+Does DAGGER improve win rate? No. The win rate is the same (albeit different boards), and the relative VP margin is roughly the same.
+
+**GRPO: implementation**
 
 ### costs
 
