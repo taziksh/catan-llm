@@ -252,7 +252,12 @@ Games are only seed-deterministic under `PYTHONHASHSEED=0`, so the env refuses t
 From our first set of experiments (n=5):
 
 ![LLMs vs bot anchors](assets/models_vs_anchors.png)
-![LLMs vs bot anchors](assets/models_winrate.png)
+
+*Mean VP margin, scaled so 0 = victory_point and 100 = alpha_beta on the same seeds. Error bars are 95% confidence intervals.*
+
+![Catan win rate leaderboard](assets/models_winrate.png)
+
+*Win rate vs 3 value_function bots. Error bars are 95% confidence intervals.*
 
 Overall, the model performance more or less matches what we'd expect: bigger is better (more params), and so is longer (thinking tokens). I'm curious to see how the best models play! TODO: replay visualizer
 
