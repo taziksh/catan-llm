@@ -508,13 +508,17 @@ i already had $5-10 of credits on oai and openrouter. i won't include those unti
 
 here are the other credits i had to pay for:
 
+free credits
 givemeanode | $500
 tinker | $ 150
+
+out of pocket:
 prime intellect | $30 
 anthropic | $30
 openrouter | check usage dates+amt
 xiaomi | $4
-openai | check usage dates+amt
+runpod | $90
+openai | $5 + prev credit balance
 
 will update once i see if these are all used
 
@@ -522,6 +526,12 @@ will update once i see if these are all used
 - teach it to trade
 - do reasoning traces help?
 - train on curriculum: general games, then winner only
+- play it against alpha_beta
+- play it against other LLMs
+
+### caveats
+- model only trades with the bank
+- model is given bank count remainder every turn
 
 ### references:
 - https://docs.primeintellect.ai/verifiers/v1/overview
