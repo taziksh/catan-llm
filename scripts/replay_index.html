@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>catan-llm replays</title>
+<link rel="preconnect" href="https://fonts.gstatic.com">
+<link href="https://fonts.googleapis.com/css2?family=Bungee+Inline&display=block" rel="stylesheet">
+<style>
+  :root {
+    --panel: #161616f2;
+    --text: #ffffff;
+    --muted: #b5bec6;
+    --line: #ffffff1f;
+    --blue: #2278ff;
+    --blue-light: #4b98ff;
+    --seat-red: #fe0400;
+    --seat-blue: #2278ff;
+    --seat-orange: #ffa500;
+    --seat-white: #f2f2f2;
+    --ui: "Roboto", "Helvetica Neue", Arial, sans-serif;
+    --logo: "Bungee Inline", sans-serif;
+    --mono: "SF Mono", Menlo, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: radial-gradient(ellipse at center, #2e97cc 0%, #1d6ea8 55%, #14507e 100%);
+    background-attachment: fixed;
+    color: var(--text);
+    font-family: var(--ui);
+  }
+
+  .wrap {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 30px 28px 80px;
+  }
+
+  header { text-align: center; margin-bottom: 28px; }
+
+  h1 {
+    font-family: var(--logo);
+    font-size: 34px;
+    font-weight: 400;
+    margin: 0;
+    letter-spacing: 0.02em;
+  }
+
+  .subtitle {
+    font-family: var(--logo);
+    font-size: 15px;
+    margin: 2px 0 10px;
+  }
+
+  .header-side {
+    font-size: 13px;
+    color: #e3f0fa;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 16px;
+  }
+
+  .card {
+    display: block;
+    position: relative;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 16px 18px 14px;
+    text-decoration: none;
+    color: var(--text);
+    box-shadow: 0 10px 26px #0a2c4550;
+  }
+
+  .card:hover { border-color: var(--blue-light); }
+  .card:focus-visible { outline: 2px solid var(--blue-light); outline-offset: 2px; }
+
+  .card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 14px;
+  }
+
+  .metrics { display: flex; gap: 12px; }
+
+  .seed {
+    font-family: var(--mono);
+    font-size: 11px;
+    background: #ffffff14;
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    padding: 2px 10px;
+    color: var(--text);
+  }
+
+  .seats {
+    display: flex;
+    gap: 14px;
+    margin-bottom: 14px;
+  }
+
+  .seat { text-align: center; min-width: 46px; }
+
+  .hex {
+    width: 44px;
+    height: 50px;
+    margin: 0 auto 5px;
+    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #ffffff;
+    font-size: 16px;
+    font-weight: 700;
+  }
+
+  .seat.winner .hex { outline: 3px solid #ffffff; outline-offset: -3px; }
+
+  .kind {
+    font-family: var(--mono);
+    font-size: 9px;
+    line-height: 1.25;
+    color: var(--muted);
+    display: block;
+    max-width: 62px;
+    margin: 0 auto;
+  }
+
+  .seat.llm .kind { color: var(--text); font-weight: 700; }
+
+  .verdict { font-size: 14px; font-weight: 500; margin: 0 0 12px; }
+
+  .card-bottom {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 10px;
+    border-top: 1px solid var(--line);
+    padding-top: 9px;
+  }
+
+  .game-id {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .watch {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--blue-light);
+    white-space: nowrap;
+    opacity: 0;
+  }
+
+  .card:hover .watch, .card:focus-visible .watch { opacity: 1; }
+
+  .card.pending, .card.failed { cursor: default; }
+
+  .pending-title, .failed-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    margin: 0 0 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .pending-note { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 10px; }
+
+  .spinner {
+    width: 16px;
+    height: 18px;
+    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    background: var(--blue-light);
+    animation: spin 1.1s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+
+  .failed-title { color: var(--seat-red); }
+  .failed-note { font-size: 13px; color: var(--text); margin: 0; overflow-wrap: anywhere; }
+
+  .dismiss {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    border: none;
+    background: none;
+    font-size: 14px;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 4px;
+  }
+
+  .empty {
+    grid-column: 1 / -1;
+    background: var(--panel);
+    border: 1px dashed #ffffff59;
+    border-radius: 8px;
+    padding: 48px 24px;
+    text-align: center;
+  }
+
+  .empty h2 { font-weight: 500; margin: 0 0 8px; }
+  .empty p { color: var(--muted); margin: 0 0 14px; }
+
+  .empty code {
+    font-family: var(--mono);
+    font-size: 12px;
+    background: #ffffff14;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 6px 12px;
+  }
+
+  #overlay {
+    position: fixed;
+    inset: 0;
+    background: #14507ee0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+  }
+
+  #overlay.on { display: flex; }
+
+  #overlay .inner {
+    border: 2px dashed #ffffff;
+    border-radius: 12px;
+    padding: 46px 64px;
+    color: #ffffff;
+    font-family: var(--logo);
+    font-size: 24px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>CATANATRON</h1>
+    <p class="subtitle">REPLAYS</p>
+    <div class="header-side">
+      <span id="count">0</span> games loaded · drop a trajectory .jsonl anywhere to load it
+    </div>
+  </header>
+  <div class="grid" id="grid"></div>
+</div>
+
+<div id="overlay" aria-hidden="true"><div class="inner">DROP TO LOAD</div></div>
+
+<script>
+  const UI_URL = "http://localhost:3000";
+  const SEAT_COLORS = {
+    RED: "var(--seat-red)",
+    BLUE: "var(--seat-blue)",
+    ORANGE: "var(--seat-orange)",
+    WHITE: "var(--seat-white)",
+  };
+  const grid = document.getElementById("grid");
+  const count = document.getElementById("count");
+  let games = [];
+  let pending = [];
+  let failed = [];
+
+  function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  function gameCard(game) {
+    const card = el("a", "card");
+    card.href = `${UI_URL}/replays/${game.game_id}`;
+    card.target = "_blank";
+
+    const top = el("div", "card-top");
+    const metrics = el("span", "metrics");
+    metrics.append(
+      el("span", "", `${game.states} states`),
+      el("span", "", `${game.turns} turns`),
+    );
+    top.append(
+      el("span", "seed", game.seed === null ? "seed ?" : `seed ${game.seed}`),
+      metrics,
+    );
+
+    const seats = el("div", "seats");
+    game.colors.forEach((color, seat) => {
+      const kind = game.seat_kinds ? game.seat_kinds[seat] : "";
+      const box = el("div", "seat" + (color === game.winner ? " winner" : "") + (kind === "llm" ? " llm" : ""));
+      const hex = el("div", "hex", String(game.victory_points[color] ?? "?"));
+      hex.style.background = SEAT_COLORS[color] || "var(--muted)";
+      if (color === "WHITE") hex.style.color = "#1a1a1a";
+      box.append(hex, el("span", "kind", kind.replaceAll("_", "_​")));
+      const label = kind ? `${kind}, ` : "";
+      box.title = `${label}${color}, ${game.victory_points[color]} VP`;
+      seats.append(box);
+    });
+
+    const verdictText = game.winner
+      ? `${seatName(game, game.winner)} wins with ${game.victory_points[game.winner]} VP`
+      : "truncated, no winner";
+    const verdict = el("p", "verdict", verdictText);
+    if (game.winner) verdict.style.color = SEAT_COLORS[game.winner];
+
+    const bottom = el("div", "card-bottom");
+    const id = el("span", "game-id", game.game_id);
+    id.title = game.game_id;
+    bottom.append(id, el("span", "watch", "Open replay"));
+
+    card.append(top, seats, verdict, bottom);
+    return card;
+  }
+
+  function seatName(game, color) {
+    if (!game.seat_kinds) return color;
+    return game.seat_kinds[game.colors.indexOf(color)] || color;
+  }
+
+  function pendingCard(name) {
+    const card = el("div", "card pending");
+    card.append(el("p", "pending-title", name));
+    const note = el("div", "pending-note");
+    note.append(el("span", "spinner"), el("span", "", "replaying through the engine…"));
+    card.append(note);
+    return card;
+  }
+
+  function failedCard(item, i) {
+    const card = el("div", "card failed");
+    const dismiss = el("button", "dismiss", "✕");
+    dismiss.setAttribute("aria-label", "Dismiss");
+    dismiss.onclick = () => { failed.splice(i, 1); render(); };
+    card.append(dismiss, el("p", "failed-title", item.name), el("p", "failed-note", item.error));
+    return card;
+  }
+
+  function emptyState() {
+    const box = el("div", "empty");
+    box.append(
+      el("h2", "", "No games loaded yet"),
+      el("p", "", "Drop a trajectory .jsonl anywhere on this page, or run:"),
+      el("code", "", "python scripts/replay_to_ui.py data/eval_traces/<run>/<game>.jsonl"),
+    );
+    return box;
+  }
+
+  function render() {
+    grid.replaceChildren();
+    failed.forEach((item, i) => grid.append(failedCard(item, i)));
+    pending.forEach((name) => grid.append(pendingCard(name)));
+    games.forEach((game) => grid.append(gameCard(game)));
+    if (!grid.children.length) grid.append(emptyState());
+    count.textContent = games.length;
+  }
+
+  async function refresh() {
+    const response = await fetch("/api/replays");
+    games = await response.json();
+    render();
+  }
+
+  async function uploadFiles(files) {
+    for (const file of files) {
+      if (!file.name.endsWith(".jsonl")) {
+        failed.push({ name: file.name, error: "not a trajectory .jsonl file" });
+        continue;
+      }
+      pending.push(file.name);
+      render();
+      try {
+        const body = new FormData();
+        body.append("trajectory", file);
+        const response = await fetch("/api/replays", { method: "POST", body });
+        const result = await response.json();
+        if (!response.ok) failed.push({ name: file.name, error: result.error });
+      } catch (error) {
+        failed.push({ name: file.name, error: String(error) });
+      }
+      pending = pending.filter((name) => name !== file.name);
+      await refresh();
+    }
+  }
+
+  const overlay = document.getElementById("overlay");
+  let dragDepth = 0;
+  window.addEventListener("dragenter", (event) => {
+    event.preventDefault();
+    dragDepth += 1;
+    overlay.classList.add("on");
+  });
+  window.addEventListener("dragleave", () => {
+    dragDepth -= 1;
+    if (dragDepth <= 0) { dragDepth = 0; overlay.classList.remove("on"); }
+  });
+  window.addEventListener("dragover", (event) => event.preventDefault());
+  window.addEventListener("drop", (event) => {
+    event.preventDefault();
+    dragDepth = 0;
+    overlay.classList.remove("on");
+    uploadFiles([...event.dataTransfer.files]);
+  });
+
+  refresh();
+</script>
+</body>
+</html>
