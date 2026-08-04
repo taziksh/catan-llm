@@ -303,8 +303,8 @@ def test_state_action_scores_hits_misses_and_crn(llm_trace, replayed_states):
     }
 
     scores, new_rows, hits, misses = state_action_scores(
-        cache, llm_trace, replayed, [first, second], seeds, None,
-        "value_function", "value_function",
+        cache, llm_trace, decision.game_id, decision.i, [first, second],
+        seeds, None, "value_function", "value_function",
     )
 
     assert (hits, misses) == (2, 2)
@@ -318,8 +318,8 @@ def test_state_action_scores_hits_misses_and_crn(llm_trace, replayed_states):
     assert scores == pytest.approx(expected)
 
     warm = state_action_scores(
-        cache, llm_trace, replayed, [first, second], seeds, None,
-        "value_function", "value_function",
+        cache, llm_trace, decision.game_id, decision.i, [first, second],
+        seeds, None, "value_function", "value_function",
     )
     assert warm == (scores, [], 4, 0)
 
