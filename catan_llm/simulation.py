@@ -36,10 +36,7 @@ class ActionScore:
 
     @property
     def win_rate(self) -> float:
-        wins = sum(
-            scenario.outcome.winner == self.hero
-            for scenario in self.scenarios
-        )
+        wins = sum(scenario.outcome.winner == self.hero for scenario in self.scenarios)
         return wins / len(self.scenarios)
 
     @property
@@ -48,18 +45,28 @@ class ActionScore:
         for scenario in self.scenarios:
             points = scenario.outcome.victory_points
             opponent_best = max(
-                value for player, value in points.items()
-                if player != self.hero
+                value for player, value in points.items() if player != self.hero
             )
             margins.append(points[self.hero] - opponent_best)
         return sum(margins) / len(margins)
 
     @property
     def truncation_rate(self) -> float:
-        truncated = sum(
-            scenario.outcome.truncated for scenario in self.scenarios
-        )
+        truncated = sum(scenario.outcome.truncated for scenario in self.scenarios)
         return truncated / len(self.scenarios)
+
+
+def game_outcome(game: Game) -> GameOutcome:
+    """Read the terminal or truncated outcome of a live game."""
+    winner = game.winning_color()
+    return GameOutcome(
+        winner=Player(winner.value) if winner is not None else None,
+        victory_points={
+            Player(color.value): get_actual_victory_points(game.state, color)
+            for color in game.state.colors
+        },
+        turns=game.state.num_turns,
+    )
 
 
 def detached_game_copy(game: Game) -> Game:
@@ -104,18 +111,8 @@ def rollout_action(
         for player in continuation.state.players
     ]
     continuation.execute(root_action)
-    winner = continuation.play()
-    victory_points = {
-        Player(color.value): get_actual_victory_points(
-            continuation.state, color
-        )
-        for color in continuation.state.colors
-    }
-    return GameOutcome(
-        winner=Player(winner.value) if winner is not None else None,
-        victory_points=victory_points,
-        turns=continuation.state.num_turns,
-    )
+    continuation.play()
+    return game_outcome(continuation)
 
 
 def score_actions(

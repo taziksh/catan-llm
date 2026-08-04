@@ -2,7 +2,8 @@
 
 from conftest import log_game
 
-from catan_llm.schema import ActionType, DevCard, Phase, Resource
+from catan_llm.replay import replay_model_decisions
+from catan_llm.schema import ActionType, DecisionRecord, DevCard, Phase, Resource
 
 # Phases where the legal action types are fully determined by the phase.
 PHASE_ACTIONS = {
@@ -62,3 +63,48 @@ def test_results(trajectory):
         else:
             assert rec.result is None
     assert rolls > 0
+
+
+def _stochastic_result_pairs(path, action_type):
+    """Pairs each logged result with the replayed result for one action type."""
+    lines = path.read_text().splitlines()
+    decisions = [DecisionRecord.model_validate_json(line) for line in lines[1:]]
+    last = None
+    for last in replay_model_decisions(path):
+        pass
+    assert last is not None
+    records = last.game.state.action_records
+    pairs = []
+    for decision, record in zip(decisions, records):
+        if record.action.action_type.value != action_type.value:
+            continue
+        replayed = (
+            list(record.result)
+            if isinstance(record.result, tuple)
+            else record.result
+        )
+        pairs.append((decision.result, replayed))
+    return pairs
+
+
+def test_rolls_replayed_from_log(record_env_style_game):
+    pairs = _stochastic_result_pairs(record_env_style_game(19), ActionType.ROLL)
+    assert pairs
+    assert all(logged == replayed for logged, replayed in pairs)
+
+
+def test_dev_card_draws_replayed_from_log(record_env_style_game):
+    pairs = _stochastic_result_pairs(
+        record_env_style_game(19), ActionType.BUY_DEVELOPMENT_CARD
+    )
+    assert pairs
+    assert all(logged == replayed for logged, replayed in pairs)
+
+
+def test_robber_steals_replayed_from_log(record_env_style_game):
+    pairs = _stochastic_result_pairs(
+        record_env_style_game(19), ActionType.MOVE_ROBBER
+    )
+    steals = [pair for pair in pairs if pair[0] is not None]
+    assert steals
+    assert all(logged == replayed for logged, replayed in steals)
