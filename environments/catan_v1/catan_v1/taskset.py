@@ -61,13 +61,9 @@ def validate_seed_range(seed_start: int, num_seeds: int) -> None:
         raise ValueError("seed_start must be non-negative")
     if num_seeds < 1:
         raise ValueError("num_seeds must be at least 1")
-    if 0 < seed_start < EVAL_SEED_LIMIT:
+    if seed_start < EVAL_SEED_LIMIT < seed_start + num_seeds:
         raise ValueError(
-            f"seed_start={seed_start} overlaps eval seeds below {EVAL_SEED_LIMIT}"
-        )
-    if seed_start == 0 and num_seeds > EVAL_SEED_LIMIT:
-        raise ValueError(
-            f"evaluation range crosses into training seeds at {EVAL_SEED_LIMIT}"
+            f"seed range crosses into training seeds at {EVAL_SEED_LIMIT}"
         )
 
 
@@ -219,14 +215,15 @@ class CatanTasksetConfig(vf.TasksetConfig):
     @field_validator("seed_start")
     @classmethod
     def validate_seed_start(cls, seed_start: int) -> int:
-        validate_seed_range(seed_start, EVAL_SEED_LIMIT)
+        validate_seed_range(seed_start, 1)
         return seed_start
 
 
 class CatanTaskset(vf.Taskset[vf.Task[CatanData], CatanTasksetConfig]):
     def load(self) -> Iterator[vf.Task]:
         start = self.config.seed_start
-        for i in range(start, start + EVAL_SEED_LIMIT):
+        end = EVAL_SEED_LIMIT if start < EVAL_SEED_LIMIT else start + EVAL_SEED_LIMIT
+        for i in range(start, end):
             yield vf.Task(
                 CatanData(idx=i, name=f"game#{i}", prompt=None, info={"seed": i})
             )

@@ -194,7 +194,10 @@ def test_hosted_loader_keeps_train_and_eval_seeds_disjoint():
     ("kwargs", "message"),
     [
         ({"seed_start": -1}, "non-negative"),
-        ({"seed_start": 1}, "overlaps eval seeds"),
+        (
+            {"seed_start": 9_999, "num_seeds": 2},
+            "crosses into training seeds",
+        ),
         (
             {"seed_start": 0, "num_seeds": 10_001},
             "crosses into training seeds",
@@ -236,5 +239,6 @@ def test_v1_config_validates_lineups_and_seed_partition():
 
     with pytest.raises(ValidationError, match="at least one agent"):
         CatanEnvConfig(seats="random,random,random,random")
-    with pytest.raises(ValidationError, match="overlaps eval seeds"):
-        CatanTasksetConfig(seed_start=1)
+    assert CatanTasksetConfig(seed_start=5).seed_start == 5
+    with pytest.raises(ValidationError, match="greater than or equal to 0"):
+        CatanTasksetConfig(seed_start=-1)
