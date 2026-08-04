@@ -91,6 +91,12 @@
     margin-bottom: 14px;
   }
 
+  .model-name {
+    font-size: 19px;
+    font-weight: 700;
+    margin: -2px 0 14px;
+  }
+
   .metrics { display: flex; gap: 12px; }
 
   .seed {
@@ -266,7 +272,6 @@
 <div id="overlay" aria-hidden="true"><div class="inner">DROP TO LOAD</div></div>
 
 <script>
-  const UI_URL = "http://localhost:3000";
   const SEAT_COLORS = {
     RED: "var(--seat-red)",
     BLUE: "var(--seat-blue)",
@@ -288,7 +293,7 @@
 
   function gameCard(game) {
     const card = el("a", "card");
-    card.href = `${UI_URL}/replays/${game.game_id}`;
+    card.href = `/replays/${game.game_id}`;
     card.target = "_blank";
 
     const top = el("div", "card-top");
@@ -302,10 +307,13 @@
       metrics,
     );
 
+    const modelName = game.model_label || (game.model_color ? "Unidentified LLM" : null);
+    const modelHeading = modelName ? el("div", "model-name", `${modelName} plays ${game.model_color}`) : null;
+
     const seats = el("div", "seats");
     game.colors.forEach((color, seat) => {
       const kind = game.seat_kinds ? game.seat_kinds[seat] : "";
-      const box = el("div", "seat" + (color === game.winner ? " winner" : "") + (kind === "llm" ? " llm" : ""));
+      const box = el("div", "seat" + (color === game.winner ? " winner" : "") + (color === game.model_color ? " llm" : ""));
       const hex = el("div", "hex", String(game.victory_points[color] ?? "?"));
       hex.style.background = SEAT_COLORS[color] || "var(--muted)";
       if (color === "WHITE") hex.style.color = "#1a1a1a";
@@ -326,11 +334,14 @@
     id.title = game.game_id;
     bottom.append(id, el("span", "watch", "Open replay"));
 
-    card.append(top, seats, verdict, bottom);
+    card.append(top);
+    if (modelHeading) card.append(modelHeading);
+    card.append(seats, verdict, bottom);
     return card;
   }
 
   function seatName(game, color) {
+    if (color === game.model_color && game.model_label) return game.model_label;
     if (!game.seat_kinds) return color;
     return game.seat_kinds[game.colors.indexOf(color)] || color;
   }

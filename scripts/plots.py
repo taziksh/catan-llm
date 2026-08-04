@@ -649,6 +649,10 @@ def models_winrate(outputs_dir, out, round_dir=None, anchors_path=None,
     """Combined win-rate leaderboard: LLM round, SFT checkpoints, bot anchors."""
     bot_labels = {"alpha_beta": "alpha-beta (bot)", "value_function": "value function (bot)",
                   "victory_point": "victory point (bot)"}
+    sft_labels = {
+        "sft-9b-10k-nt": "Qwen3.5-9B SFT (10k examples)",
+        "sft-35b-10k-nt": "Qwen3.5-35B SFT (10k examples)",
+    }
     rows = []
 
     def add(label, wins, games, color):
@@ -665,6 +669,7 @@ def models_winrate(outputs_dir, out, round_dir=None, anchors_path=None,
                 continue
             if is_sft:
                 color = SFT
+                label = sft_labels.get(label, label)
             else:
                 color = THINKING if "(thinking)" in label else NONTHINKING
             add(label, sum(results), len(results), color)

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from catan_llm.determinism import require_fixed_hashseed
 from catan_llm.replay import replay_steps
+from catan_llm.replay_metadata import save_replay_model
 
 
 def main():
@@ -19,6 +20,13 @@ def main():
         type=Path,
         default=Path("data/replays.sqlite"),
         help="sqlite file the catanatron web API reads",
+    )
+    parser.add_argument("--model", help="model name to display in the replay browser")
+    parser.add_argument(
+        "--metadata",
+        type=Path,
+        default=Path("data/replays.models.json"),
+        help="model identity sidecar read by the replay browser",
     )
     args = parser.parse_args()
 
@@ -36,6 +44,9 @@ def main():
                 session.commit()
             upsert_game_state(step.game, session)
             states += 1
+
+    if args.model:
+        save_replay_model(args.metadata, game_id, args.model)
 
     print(f"{game_id}: {states} states -> {args.db}")
     print(f"replay: http://localhost:3000/replays/{game_id}")

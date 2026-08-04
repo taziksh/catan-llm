@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Catan LLM replay</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; margin: 0; }
+  body { background: #111; color: #fff; font-family: Arial, sans-serif; overflow: hidden; }
+  header {
+    height: 68px;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding: 0 22px;
+    background: #161616;
+    border-bottom: 1px solid #ffffff24;
+  }
+  a { color: #8fc5ff; text-decoration: none; font-size: 14px; }
+  h1 { font-size: 19px; margin: 0 0 3px; }
+  p { color: #b8c1ca; font-size: 13px; margin: 0; }
+  iframe { display: block; width: 100%; height: calc(100% - 68px); border: 0; }
+</style>
+</head>
+<body>
+<header>
+  <a href="/">← all replays</a>
+  <div class="identity">
+    <h1 id="title">Loading model identity…</h1>
+    <p id="details"></p>
+  </div>
+</header>
+<iframe id="viewer" title="Catan replay"></iframe>
+<script>
+  const gameId = decodeURIComponent(location.pathname.split("/").pop());
+  document.getElementById("viewer").src = `http://localhost:3000/replays/${gameId}`;
+  fetch("/api/replays")
+    .then((response) => response.json())
+    .then((games) => {
+      const game = games.find((entry) => entry.game_id === gameId);
+      if (!game) throw new Error("replay metadata not found");
+      const model = game.model_label || "Unidentified LLM";
+      const color = game.model_color || "unknown color";
+      document.title = `${model} — Catan replay`;
+      document.getElementById("title").textContent = `${model} plays ${color}`;
+      document.getElementById("details").textContent = `Seed ${game.seed} · versus three value-function bots · ${game.turns} turns`;
+    })
+    .catch((error) => {
+      document.getElementById("title").textContent = "LLM replay";
+      document.getElementById("details").textContent = String(error);
+    });
+</script>
+</body>
+</html>

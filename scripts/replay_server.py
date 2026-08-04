@@ -11,10 +11,19 @@ from sqlalchemy import func
 
 from catan_llm.determinism import require_fixed_hashseed
 from catan_llm.replay import replay_steps
+from catan_llm.replay_metadata import load_replay_models, save_replay_model
 
 ROOT = Path(__file__).resolve().parents[1]
 INDEX_HTML = Path(__file__).with_name("replay_index.html")
+WATCH_HTML = Path(__file__).with_name("replay_watch.html")
 DEFAULT_DB = ROOT / "data" / "replays.sqlite"
+DEFAULT_METADATA = ROOT / "data" / "replays.models.json"
+
+def display_model_name(model: str | None) -> str | None:
+    """Remove a provider prefix while preserving the recorded mode label."""
+    if model is None:
+        return None
+    return model.rsplit("/", 1)[-1]
 
 
 def parse_game_id(game_id: str, seat_count: int) -> tuple[list[str] | None, int | None]:
@@ -41,9 +50,14 @@ def create_server():
     def index():
         return send_file(INDEX_HTML)
 
+    @app.get("/replays/<game_id>")
+    def watch_replay(game_id):
+        return send_file(WATCH_HTML)
+
     @app.get("/api/replays")
     def list_replays():
         games = []
+        replay_models = load_replay_models(DEFAULT_METADATA)
         with database_session() as session:
             rows = (
                 session.query(
@@ -66,6 +80,10 @@ def create_server():
                 colors = [color.value for color in game.state.colors]
                 winner = game.winning_color()
                 kinds, seed = parse_game_id(uuid, len(colors))
+                model = replay_models.get(uuid)
+                model_color = None
+                if kinds and "llm" in kinds:
+                    model_color = colors[kinds.index("llm")]
                 games.append({
                     "game_id": uuid,
                     "load_order": load_order,
@@ -73,6 +91,9 @@ def create_server():
                     "turns": game.state.num_turns,
                     "colors": colors,
                     "seat_kinds": kinds,
+                    "model": model,
+                    "model_label": display_model_name(model),
+                    "model_color": model_color,
                     "seed": seed,
                     "victory_points": {
                         color.value: get_actual_victory_points(game.state, color)
@@ -109,6 +130,10 @@ def create_server():
                         session.query(GameState).filter_by(uuid=game_id).delete()
                         session.commit()
                 return jsonify({"error": str(error)}), 400
+
+        model = request.form.get("model", "").strip()
+        if model:
+            save_replay_model(DEFAULT_METADATA, game_id, model)
 
         return jsonify({"game_id": game_id, "states": states})
 
