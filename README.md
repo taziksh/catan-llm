@@ -511,7 +511,38 @@ As a side note, we discovered first-hand just how much the configuration and min
 
 Does DAGGER improve win rate? No. The win rate is the same (albeit different boards), and the relative VP margin is roughly the same.
 
+**DPO**
+After DAgger, we wanted to see if we could just directly get our student to make moves that matched the teacher's preferences. Direct preference optimization (DPO) increased held-out preference accuracy from 49.9% to 75.6%, but wins only increased from 2/200 to 5/200. Paired VP margin increased by just 0.06 VP, so we found no clear gameplay improvement.
+
+This suggests that teacher imitation might be saturated! We thus turn to training directly on complete games played by our policy (current model).
+
 **GRPO: implementation**
+
+As discussed in the theory section, GRPO involves sampling many games with the current policy, and then taking the *mean* of those rewards as our baseline. Games above the baseline receive positive advantage, which increases the probability of the actions sampled in those games.
+
+We do GRPO over the *entire game*. Specifically, the current policy plays eight complete games from each seeded board against three value_function bots. We score the terminal outcomes and use their group-relative advantages to update every valid model action in those games.
+
+> When all eight games receive the same reward, their advantages are zero, so we don't update on it (there's no gradient!)
+
+We initialize from our evaluated DPO checkpoint and sample moves at temperature 1.0, so repeated games can follow different trajectories. We use the win + VP reward defined above, which provides signal between losing games while keeping wins dominant.
+
+One practical issue is that a complete game can be too long to fit into one training sequence. The probability of a game decomposes into the probabilities of its individual actions, so we train those decisions separately while giving every valid decision the advantage of its complete game. This preserves whole-game credit assignment, but does not identify which individual decisions caused the result.
+
+If the model gives an invalid reply, the environment gives it one retry and then uses a random legal move so the game can continue. Invalid replies receive no gameplay credit. Games that reach the turn limit receive no win reward but keep their VP reward; games interrupted by infrastructure failures are excluded.
+
+We don't use a KL penalty to the DPO checkpoint at first because DPO did not clearly improve gameplay. If training becomes unstable, we'll reconsider.
+
+We train our model as follows:
+- freeze current policy
+- generate batch of games
+- calculate group-relative advantages
+- update policy
+- generate games with the new policy
+
+Each update contains the results of 4 distinct boards/seeds, with 8 rollouts each, for a total of 32 games per update
+
+Our initial run uses 25 updates, with four groups of eight games per update, for 800 training games. We evaluate the resulting policy against DPO on the same 200 held-out seeds used above. Wins are our primary outcome; paired VP margin is a more sensitive secondary measure when the number of wins is too small to be conclusive.
+
 
 ### costs
 
@@ -529,7 +560,8 @@ anthropic | $30
 openrouter | check usage dates+amt
 xiaomi | $4
 runpod | $90
-openai | $5 + prev credit balance
+openai | $15 + prev credit balance
+moonshot | $10
 
 will update once i see if these are all used
 
