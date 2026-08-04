@@ -1,0 +1,20 @@
+[[eval]]
+env_id = "catan_v1"
+model = "dpo-post"
+api_base_url = "http://localhost:8006/v1"
+api_key_var = "VLLM_API_KEY"
+num_examples = 100
+rollouts_per_example = 1
+max_concurrent = 128
+max_tokens = 32
+temperature = 0.0
+save_results = true
+
+[eval.args]
+seats = "agent,value_function,value_function,value_function"
+invalid_retries = 1
+vp_coef = 0.1
+max_turns = 500
+seed_start = 0
+num_seeds = 100
+trajectory_dir = "data/eval_traces/dpo_fair_post"
