@@ -10,8 +10,8 @@ to the frozen initial adapter state via peft multi-adapter switching.
 
 Prompts render exactly as in the DPO data: SYSTEM_PROMPT plus the decision
 serialization, through the non-thinking Qwen chat template. Sampling runs
-in-process by default; --api-base samples from a vLLM endpoint instead, in
-which case completions are re-tokenized locally for the loss.
+in-process, so the loss always evaluates the exact sampled tokens under
+the weights that produced them.
 """
 
 import argparse
@@ -25,7 +25,6 @@ import subprocess
 import time
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
-from urllib.request import Request, urlopen
 
 from catan_llm.determinism import EVAL_SEED_LIMIT, check_fixed_hashseed
 from catan_llm.parse import parse_move
@@ -279,24 +278,6 @@ def completion_attention_mask(sequences, prompt_length: int, stop_ids: set[int])
     return mask
 
 
-def encode_completions(texts: list[str], tokenizer):
-    """Tokenize API-sampled texts as training targets, appending EOS."""
-    import torch
-
-    rows = [
-        tokenizer(text, add_special_tokens=False)["input_ids"]
-        + [tokenizer.eos_token_id]
-        for text in texts
-    ]
-    width = max(len(row) for row in rows)
-    padded = torch.full((len(rows), width), tokenizer.eos_token_id, dtype=torch.long)
-    mask = torch.zeros((len(rows), width), dtype=torch.long)
-    for index, row in enumerate(rows):
-        padded[index, : len(row)] = torch.tensor(row, dtype=torch.long)
-        mask[index, : len(row)] = 1
-    return padded, mask
-
-
 def sample_in_process(model, tokenizer, prompt: str, k: int, temperature: float):
     """Sample K completions with plain temperature sampling (no top-k/top-p)."""
     import torch
@@ -324,31 +305,6 @@ def sample_in_process(model, tokenizer, prompt: str, k: int, temperature: float)
         output, prompt_length, stop_token_ids(model, tokenizer)
     )
     return output, attention_mask, prompt_length, texts
-
-
-def sample_via_api(
-    api_base: str, model_name: str, prompt: str, k: int, temperature: float
-) -> list[str]:
-    """Sample K completion texts from an OpenAI-compatible vLLM endpoint."""
-    request = Request(
-        api_base.rstrip("/") + "/completions",
-        data=json.dumps(
-            {
-                "model": model_name,
-                "prompt": prompt,
-                "n": k,
-                "temperature": temperature,
-                "max_tokens": MAX_NEW_TOKENS,
-            }
-        ).encode(),
-        headers={"Content-Type": "application/json"},
-    )
-    with urlopen(request) as response:
-        payload = json.load(response)
-    texts = [choice["text"] for choice in payload["choices"]]
-    if len(texts) != k:
-        raise RuntimeError(f"endpoint returned {len(texts)} completions, not {k}")
-    return texts
 
 
 def subset_identity(identity: list[list]) -> str:
@@ -530,33 +486,9 @@ def run(args) -> dict:
             prompt = render_prompt(
                 prompt_messages(game_record, decision), tokenizer
             )
-            if args.api_base:
-                texts = sample_via_api(
-                    args.api_base,
-                    args.api_model,
-                    prompt,
-                    args.k,
-                    args.temperature,
-                )
-                prompt_ids = tokenizer(
-                    prompt, return_tensors="pt", add_special_tokens=False
-                )["input_ids"]
-                prompt_length = prompt_ids.shape[1]
-                completion_ids, completion_mask = encode_completions(texts, tokenizer)
-                sequences = torch.cat(
-                    [prompt_ids.repeat(args.k, 1), completion_ids], dim=1
-                ).to(model.device)
-                attention_mask = torch.cat(
-                    [
-                        torch.ones((args.k, prompt_length), dtype=torch.long),
-                        completion_mask,
-                    ],
-                    dim=1,
-                ).to(model.device)
-            else:
-                sequences, attention_mask, prompt_length, texts = sample_in_process(
-                    model, tokenizer, prompt, args.k, args.temperature
-                )
+            sequences, attention_mask, prompt_length, texts = sample_in_process(
+                model, tokenizer, prompt, args.k, args.temperature
+            )
 
             parses = [parse_move(text, decision.legal_actions) for text in texts]
             states_seen += 1
@@ -665,7 +597,6 @@ def run(args) -> dict:
             "max_states": args.max_states,
             "max_steps": args.max_steps,
             "checkpoint_every": args.checkpoint_every,
-            "api_base": args.api_base,
             "hero_policy": HERO_POLICY,
             "opponent_policy": OPPONENT_POLICY,
         },
@@ -733,11 +664,6 @@ def parse_args():
     parser.add_argument(
         "--checkpoint-every", type=int, default=DEFAULT_CHECKPOINT_EVERY
     )
-    parser.add_argument(
-        "--api-base",
-        help="OpenAI-compatible /v1 base URL; sample there instead of in-process",
-    )
-    parser.add_argument("--api-model", default="dpo-post")
     args = parser.parse_args()
 
     if args.k <= 1:

@@ -21,7 +21,6 @@ from run_grpo import (
     completion_token_logprobs,
     completion_attention_mask,
     degenerate,
-    encode_completions,
     group_rewards,
     grpo_loss,
     iter_states,
@@ -280,21 +279,6 @@ def test_stop_token_ids_include_generation_config_and_pad():
         generation_config = GenerationConfig(9)
 
     assert stop_token_ids(IntConfigModel(), Tokenizer()) == {9, 3}
-
-
-class CharTokenizer:
-    eos_token_id = 0
-
-    def __call__(self, text, add_special_tokens):
-        assert not add_special_tokens
-        return {"input_ids": [ord(char) % 30 + 1 for char in text]}
-
-
-def test_encode_completions_appends_eos_and_pads():
-    padded, mask = encode_completions(["ab", ""], CharTokenizer())
-    row = CharTokenizer()("ab", add_special_tokens=False)["input_ids"]
-    assert padded.tolist() == [row + [0], [0, 0, 0]]
-    assert mask.tolist() == [[1, 1, 1], [1, 0, 0]]
 
 
 def _manifest():
