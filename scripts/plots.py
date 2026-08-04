@@ -677,8 +677,8 @@ def models_winrate(outputs_dir, out, round_dir=None, anchors_path=None,
     plt.figure(figsize=(7.2, 0.42 * len(rows) + 1.4))
     ax = plt.gca()
     for i, (label, rate, lo, hi, wins, games, color) in enumerate(rows):
-        ax.plot([lo, hi], [i, i], color="#d4d4d4", lw=2.2, solid_capstyle="round", zorder=1)
-        ax.plot(rate, i, "o", color=color, markersize=7.5, zorder=2)
+        ax.errorbar(rate, i, xerr=[[rate - lo], [hi - rate]], color=color, marker="o",
+                    markersize=7.5, lw=0, elinewidth=1.1, ecolor="#555", capsize=3, zorder=2)
         ax.annotate(f"{wins}/{games}", (hi, i), textcoords="offset points", xytext=(8, 0),
                     va="center", fontsize=9, color="#999")
     ax.axvline(25, color="#bbb", ls="--", lw=1, zorder=0)
@@ -687,7 +687,7 @@ def models_winrate(outputs_dir, out, round_dir=None, anchors_path=None,
     ax.set_yticks(range(len(rows)), [r[0] for r in rows], fontsize=10)
     ax.set_ylim(len(rows) - 0.5, -0.5)
     ax.set_xlim(-1.5, max(r[3] for r in rows) + 10)
-    ax.set_xlabel("win rate (%)")
+    ax.set_xlabel("win rate (%), 95% Wilson CI")
     handles = [plt.Line2D([], [], color=c, marker="o", lw=0, label=l)
                for c, l in ((THINKING, "thinking"), (NONTHINKING, "non-thinking"),
                             (SFT, "SFT finetune"), (BOT, "scripted bot"))]
@@ -754,9 +754,8 @@ def models_vs_anchors(outputs_dir, anchors_path, out, round_dir=None):
     for i, (label, mean, se, n) in enumerate(rows):
         color = THINKING if "(thinking)" in label else NONTHINKING
         half = 100 * 1.96 * se / (hi - lo)
-        ax.plot([rel(mean) - half, rel(mean) + half], [i, i], color="#d4d4d4", lw=2.2,
-                solid_capstyle="round", zorder=1)
-        ax.plot(rel(mean), i, "o", color=color, markersize=7.5, zorder=2)
+        ax.errorbar(rel(mean), i, xerr=half, color=color, marker="o", markersize=7.5,
+                    lw=0, elinewidth=1.1, ecolor="#555", capsize=3, zorder=2)
         if n != default_n:
             ax.annotate(f"n={n}", (rel(mean) + half, i), textcoords="offset points",
                         xytext=(8, 0), va="center", fontsize=9, color="#999")
@@ -768,7 +767,7 @@ def models_vs_anchors(outputs_dir, anchors_path, out, round_dir=None):
     ax.set_yticks(range(len(rows)), [r[0] for r in rows], fontsize=10)
     ax.set_ylim(len(rows) - 0.5, -0.5)
     ax.tick_params(left=False)
-    ax.set_xlabel("mean VP margin, % of expert anchor")
+    ax.set_xlabel("mean VP margin, % of expert anchor, 95% CI")
     handles = [plt.Line2D([], [], color=c, marker="o", lw=0, label=l)
                for c, l in ((THINKING, "thinking"), (NONTHINKING, "non-thinking"))]
     ax.set_xlim(right=max(rel(mean) + 100 * 1.96 * se / (hi - lo)
@@ -928,7 +927,10 @@ def main():
         anchors_winrate(args.anchors, out)
         if Path(args.outputs).exists():
             models_vs_anchors(args.outputs, args.anchors, out, args.round)
-            models_winrate(args.outputs, out, args.round, args.anchors)
+            models_winrate(
+                args.outputs, out, args.round, args.anchors,
+                fallback_rounds=("n5", "fable_probe"),
+            )
     if Path(args.outputs).exists():
         sft_checkpoint_compare(args.outputs, out)
     print(f"-> {out}")
