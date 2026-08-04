@@ -560,6 +560,8 @@ def run(args) -> dict:
         wandb_run = wandb.init(
             project="catan-llm",
             name=args.wandb_run,
+            group="grpo",
+            job_type="train",
             config=run_config(args),
         )
 
