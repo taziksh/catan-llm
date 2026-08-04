@@ -32,13 +32,17 @@ from run_whole_game_grpo import (
     DEFAULT_GROUPS_PER_UPDATE,
     DEFAULT_TEMPERATURE,
     DEFAULT_UPDATES,
+    _batch_token_logprobs,
     checkpoint_state,
     clipped_surrogate_loss,
+    record_old_logprobs,
     retire_optimizer,
     run_config,
     save_update,
+    update_policy,
     validate_resume,
 )
+from test_run_grpo import tiny_model
 
 
 def test_approved_rollout_shape_and_reward_defaults():
@@ -219,6 +223,63 @@ def test_every_valid_decision_inherits_its_game_advantage():
         (pytest.approx(-1), [3]),
         (pytest.approx(1), [5]),
     ]
+
+
+def _decision_samples():
+    return [
+        DecisionSample(prompt_ids=[1, 2, 3], completion_ids=[4, 5]),
+        DecisionSample(prompt_ids=[6, 7, 8, 9, 10, 11], completion_ids=[12]),
+        DecisionSample(prompt_ids=[13, 14], completion_ids=[15, 16, 17, 18]),
+    ]
+
+
+def test_batched_logprobs_match_single_sample():
+    model = tiny_model()
+    samples = _decision_samples()
+
+    batched = _batch_token_logprobs(model, samples)
+    singles = [_batch_token_logprobs(model, [sample])[0] for sample in samples]
+
+    for together, alone, sample in zip(batched, singles, samples, strict=True):
+        assert together.shape == alone.shape == (len(sample.completion_ids),)
+        assert torch.allclose(together, alone, atol=1e-5)
+    assert batched[0].requires_grad
+
+
+def _trainable(samples):
+    rollouts = [
+        _rollout(10_001, index, 0.05) for index in range(len(samples))
+    ]
+    for rollout, advantage in zip(rollouts, (1.0, -0.5, 0.25), strict=True):
+        rollout.advantage = advantage
+    return list(zip(rollouts, samples, strict=True))
+
+
+def test_update_policy_micro_batch_matches_single_sample():
+    torch.manual_seed(0)
+    samples = _decision_samples()
+
+    metrics = {}
+    for micro_batch in (1, 3):
+        model = tiny_model()
+        trainable = _trainable([DecisionSample(s.prompt_ids, s.completion_ids) for s in samples])
+        record_old_logprobs(model, trainable, micro_batch)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=0.0)
+        metrics[micro_batch] = update_policy(
+            model,
+            optimizer,
+            trainable,
+            games_in_batch=3,
+            policy_epochs=1,
+            clip_epsilon=0.2,
+            micro_batch=micro_batch,
+        )
+
+    first, batched = metrics[1][0], metrics[3][0]
+    assert batched["loss_mean"] == pytest.approx(first["loss_mean"], abs=1e-6)
+    assert batched["ratio_mean"] == pytest.approx(first["ratio_mean"], abs=1e-6)
+    assert batched["clip_fraction"] == first["clip_fraction"]
+    assert batched["grad_norm"] == pytest.approx(first["grad_norm"], rel=1e-4)
 
 
 @pytest.mark.parametrize(

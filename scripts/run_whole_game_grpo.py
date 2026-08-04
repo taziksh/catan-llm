@@ -142,29 +142,40 @@ class ModelSampler:
         return sampled
 
 
-def _sample_token_logprobs(model, sample: DecisionSample):
+def _batch_token_logprobs(model, samples: list[DecisionSample]) -> list:
+    """Per-sample completion-token log-probs for one right-padded micro-batch."""
     import torch
 
-    ids = sample.prompt_ids + sample.completion_ids
-    sequence = torch.tensor([ids], dtype=torch.long, device=model.device)
-    attention_mask = torch.ones_like(sequence)
-    values, mask = completion_token_logprobs(
-        model, sequence, attention_mask, len(sample.prompt_ids)
-    )
-    return values[0][mask[0].bool()]
+    rows = [sample.prompt_ids + sample.completion_ids for sample in samples]
+    width = max(len(row) for row in rows)
+    sequences = torch.zeros((len(rows), width), dtype=torch.long, device=model.device)
+    attention_mask = torch.zeros_like(sequences)
+    for index, row in enumerate(rows):
+        sequences[index, : len(row)] = torch.tensor(
+            row, dtype=torch.long, device=model.device
+        )
+        attention_mask[index, : len(row)] = 1
+    picked, _ = completion_token_logprobs(model, sequences, attention_mask, 1)
+    values = []
+    for index, sample in enumerate(samples):
+        start = len(sample.prompt_ids) - 1
+        values.append(picked[index, start : start + len(sample.completion_ids)])
+    return values
 
 
-def record_old_logprobs(model, trainable) -> None:
+def record_old_logprobs(model, trainable, micro_batch: int = 1) -> None:
     """Record the behavior-policy probability before any optimizer step."""
     import torch
 
     model.eval()
     with torch.no_grad():
-        for _, sample in trainable:
-            values = _sample_token_logprobs(model, sample)
-            if not torch.isfinite(values).all():
-                raise RuntimeError("non-finite behavior-policy log-probability")
-            sample.old_logprobs = values.tolist()
+        for start in range(0, len(trainable), micro_batch):
+            chunk = trainable[start : start + micro_batch]
+            values = _batch_token_logprobs(model, [sample for _, sample in chunk])
+            for (_, sample), sample_values in zip(chunk, values, strict=True):
+                if not torch.isfinite(sample_values).all():
+                    raise RuntimeError("non-finite behavior-policy log-probability")
+                sample.old_logprobs = sample_values.tolist()
 
 
 def update_policy(
@@ -175,6 +186,7 @@ def update_policy(
     *,
     policy_epochs: int,
     clip_epsilon: float,
+    micro_batch: int = 1,
 ) -> list[dict]:
     """Apply trajectory-factorized PPO updates, averaging over games."""
     import torch
@@ -193,30 +205,40 @@ def update_policy(
         losses = []
         ratios = []
         clipped = 0
-        for rollout, sample in trainable:
-            new_logprob = _sample_token_logprobs(model, sample)
-            old_logprob = torch.tensor(
-                sample.old_logprobs,
-                dtype=new_logprob.dtype,
-                device=new_logprob.device,
+        for start in range(0, len(trainable), micro_batch):
+            chunk = trainable[start : start + micro_batch]
+            new_logprobs = _batch_token_logprobs(
+                model, [sample for _, sample in chunk]
             )
-            advantage = torch.tensor(
-                rollout.advantage,
-                dtype=new_logprob.dtype,
-                device=new_logprob.device,
-            )
-            loss, ratio = clipped_surrogate_loss(
-                new_logprob, old_logprob, advantage, clip_epsilon
-            )
-            if not torch.isfinite(loss) or not torch.isfinite(ratio).all():
-                raise RuntimeError(
-                    f"non-finite policy objective in policy epoch {epoch}"
+            chunk_loss = None
+            for (rollout, sample), new_logprob in zip(
+                chunk, new_logprobs, strict=True
+            ):
+                old_logprob = torch.tensor(
+                    sample.old_logprobs,
+                    dtype=new_logprob.dtype,
+                    device=new_logprob.device,
                 )
-            (loss / games_in_batch).backward()
-            ratio_values = ratio.detach().tolist()
-            ratios.extend(ratio_values)
-            losses.append(float(loss.detach().item()))
-            clipped += sum(abs(value - 1.0) > clip_epsilon for value in ratio_values)
+                advantage = torch.tensor(
+                    rollout.advantage,
+                    dtype=new_logprob.dtype,
+                    device=new_logprob.device,
+                )
+                loss, ratio = clipped_surrogate_loss(
+                    new_logprob, old_logprob, advantage, clip_epsilon
+                )
+                if not torch.isfinite(loss) or not torch.isfinite(ratio).all():
+                    raise RuntimeError(
+                        f"non-finite policy objective in policy epoch {epoch}"
+                    )
+                chunk_loss = loss if chunk_loss is None else chunk_loss + loss
+                ratio_values = ratio.detach().tolist()
+                ratios.extend(ratio_values)
+                losses.append(float(loss.detach().item()))
+                clipped += sum(
+                    abs(value - 1.0) > clip_epsilon for value in ratio_values
+                )
+            (chunk_loss / games_in_batch).backward()
 
         grad_norm = torch.nn.utils.clip_grad_norm_(
             [parameter for parameter in model.parameters() if parameter.requires_grad],
@@ -555,6 +577,7 @@ def run(args) -> dict:
             "model": args.model,
             "initial_adapter": str(args.adapter),
             "initial_adapter_sha256": initial_adapter_sha256,
+            "micro_batch": args.micro_batch,
             "kernels": kernels,
             "packages": package_versions(),
             "config": run_config(args),
@@ -585,7 +608,7 @@ def run(args) -> dict:
             trainable = trainable_samples(rollouts)
             old_logprob_started = time.time()
             if trainable:
-                record_old_logprobs(model, trainable)
+                record_old_logprobs(model, trainable, args.micro_batch)
                 old_logprob_seconds = time.time() - old_logprob_started
                 optimize_started = time.time()
                 policy_metrics = update_policy(
@@ -595,6 +618,7 @@ def run(args) -> dict:
                     games_in_batch=len(rollouts) - group_stats["failed_games"],
                     policy_epochs=args.policy_epochs,
                     clip_epsilon=args.clip_epsilon,
+                    micro_batch=args.micro_batch,
                 )
                 optimize_seconds = time.time() - optimize_started
             else:
@@ -678,6 +702,12 @@ def parse_args():
     parser.add_argument("--max-turns", type=int, default=DEFAULT_MAX_TURNS)
     parser.add_argument("--vp-coef", type=float, default=DEFAULT_VP_COEF)
     parser.add_argument("--max-prompt-tokens", type=int, default=MAX_PROMPT_TOKENS)
+    parser.add_argument(
+        "--micro-batch",
+        type=int,
+        default=8,
+        help="decisions per padded forward in the log-prob and policy passes",
+    )
     args = parser.parse_args()
 
     positive = {
@@ -686,6 +716,7 @@ def parse_args():
         "--policy-epochs": args.policy_epochs,
         "--max-turns": args.max_turns,
         "--max-prompt-tokens": args.max_prompt_tokens,
+        "--micro-batch": args.micro_batch,
     }
     for name, value in positive.items():
         if value <= 0:
