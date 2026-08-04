@@ -553,6 +553,16 @@ def run(args) -> dict:
             )
         )
 
+    wandb_run = None
+    if args.wandb_run:
+        import wandb
+
+        wandb_run = wandb.init(
+            project="catan-llm",
+            name=args.wandb_run,
+            config=run_config(args),
+        )
+
     sampler = ModelSampler(model, tokenizer, args.temperature, args.max_prompt_tokens)
     manifest_path = args.output / "run_manifest.json"
     if args.resume_from is not None:
@@ -658,6 +668,33 @@ def run(args) -> dict:
             _write_json(manifest_path, manifest)
             if previous_checkpoint is not None:
                 retire_optimizer(previous_checkpoint)
+            if wandb_run is not None:
+                import wandb
+
+                scalars = {
+                    key: value
+                    for key, value in summary.items()
+                    if isinstance(value, (int, float))
+                }
+                scalars.update(
+                    {f"phase/{key}": value for key, value in phase_seconds.items()}
+                )
+                if policy_metrics:
+                    scalars.update(
+                        {
+                            f"policy/{key}": value
+                            for key, value in policy_metrics[-1].items()
+                            if isinstance(value, (int, float))
+                        }
+                    )
+                wandb_run.log(scalars, step=update + 1)
+                artifact = wandb.Artifact(
+                    f"{args.wandb_run}-adapter",
+                    type="model",
+                    metadata={"update": update + 1},
+                )
+                artifact.add_file(str(_adapter_file(checkpoint)))
+                wandb_run.log_artifact(artifact)
             print(json.dumps(summary, sort_keys=True), flush=True)
 
         final = args.output / "final"
@@ -675,6 +712,9 @@ def run(args) -> dict:
         manifest["wall_seconds"] = time.time() - started
         _write_json(manifest_path, manifest)
         raise
+    finally:
+        if wandb_run is not None:
+            wandb_run.finish()
 
 
 def parse_args():
@@ -707,6 +747,10 @@ def parse_args():
         type=int,
         default=8,
         help="decisions per padded forward in the log-prob and policy passes",
+    )
+    parser.add_argument(
+        "--wandb-run",
+        help="wandb run name in the catan-llm project",
     )
     args = parser.parse_args()
 
