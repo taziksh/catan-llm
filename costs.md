@@ -1,6 +1,15 @@
 # Model costs
 
-We estimate `input_tokens = 500K` and `output_tokens = 50K` per game, so `$/game = 0.5 × input_price + 0.05 × output_price`.
+The `$/game` column assumes `input_tokens = 500K` and `output_tokens = 50K` per
+game, so `$/game = 0.5 × input_price + 0.05 × output_price`. **That assumption
+is high — treat the column as a worst-case ceiling, not a forecast.**
+
+Measured against real non-thinking runs on 2026-08-02: GPT-5.6 Luna came in at
+~$0.04/game against a table value of $0.80 (20x high), and Claude Sonnet 5 at
+~$0.27/game against $1.50 (5.6x high). The overshoot is not a constant factor —
+per-game token usage depends on how long the game runs, which depends on how
+well the model plays — so the column ranks models sensibly but should not be
+used to budget a row. Budget from a measured 1-game probe of the actual model.
 
 | # | Model | AA index | $/M in / out | $/game |
 |---|---|---|---|---|
