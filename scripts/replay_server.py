@@ -59,23 +59,26 @@ def create_server():
         games = []
         replay_models = load_replay_models(DEFAULT_METADATA)
         with database_session() as session:
-            rows = (
+            latest = (
                 session.query(
-                    GameState.uuid,
-                    func.max(GameState.state_index),
-                    func.max(GameState.id),
+                    GameState.uuid.label("uuid"),
+                    func.max(GameState.state_index).label("last_index"),
+                    func.max(GameState.id).label("load_order"),
                 )
                 .group_by(GameState.uuid)
+                .subquery()
+            )
+            rows = (
+                session.query(
+                    GameState,
+                    latest.c.last_index,
+                    latest.c.load_order,
+                )
+                .join(latest, GameState.id == latest.c.load_order)
                 .all()
             )
-            for uuid, last_index, load_order in rows:
-                final = (
-                    session.query(GameState)
-                    .filter_by(uuid=uuid, state_index=last_index)
-                    .first()
-                )
-                if final is None:
-                    continue
+            for final, last_index, load_order in rows:
+                uuid = final.uuid
                 game = pickle.loads(final.pickle_data)
                 colors = [color.value for color in game.state.colors]
                 winner = game.winning_color()
