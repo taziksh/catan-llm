@@ -61,6 +61,35 @@
     color: #e3f0fa;
   }
 
+  .filters {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    margin: 14px 0 10px;
+  }
+
+  .filters label {
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .filters select {
+    min-width: 250px;
+    border: 1px solid #ffffff59;
+    border-radius: 7px;
+    padding: 8px 34px 8px 11px;
+    background: var(--panel);
+    color: var(--text);
+    font: 14px var(--ui);
+    cursor: pointer;
+  }
+
+  .filters select:focus-visible {
+    outline: 2px solid var(--blue-light);
+    outline-offset: 2px;
+  }
+
   .grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
@@ -111,6 +140,7 @@
 
   .seats {
     display: flex;
+    justify-content: center;
     gap: 14px;
     margin-bottom: 14px;
   }
@@ -262,8 +292,14 @@
   <header>
     <h1>CATANATRON</h1>
     <p class="subtitle">REPLAYS</p>
+    <div class="filters">
+      <label for="player-type-filter">Player type</label>
+      <select id="player-type-filter">
+        <option value="">All player types</option>
+      </select>
+    </div>
     <div class="header-side">
-      <span id="count">0</span> games loaded · drop a trajectory .jsonl anywhere to load it
+      <span id="count">0</span> of <span id="total-count">0</span> games shown · drop a trajectory .jsonl anywhere to load it
     </div>
   </header>
   <div class="grid" id="grid"></div>
@@ -280,6 +316,8 @@
   };
   const grid = document.getElementById("grid");
   const count = document.getElementById("count");
+  const totalCount = document.getElementById("total-count");
+  const playerTypeFilter = document.getElementById("player-type-filter");
   let games = [];
   let pending = [];
   let failed = [];
@@ -323,11 +361,14 @@
       seats.append(box);
     });
 
-    const verdictText = game.winner
-      ? `${seatName(game, game.winner)} wins with ${game.victory_points[game.winner]} VP`
-      : "truncated, no winner";
-    const verdict = el("p", "verdict", verdictText);
-    if (game.winner) verdict.style.color = SEAT_COLORS[game.winner];
+    const verdict = el("p", "verdict");
+    if (game.winner) {
+      const winner = el("span", "", seatName(game, game.winner));
+      winner.style.color = SEAT_COLORS[game.winner];
+      verdict.append(winner, ` wins with ${game.victory_points[game.winner]} VP`);
+    } else {
+      verdict.textContent = "truncated, no winner";
+    }
 
     const bottom = el("div", "card-bottom");
     const id = el("span", "game-id", game.game_id);
@@ -344,6 +385,28 @@
     if (color === game.model_color && game.model_label) return game.model_label;
     if (!game.seat_kinds) return color;
     return game.seat_kinds[game.colors.indexOf(color)] || color;
+  }
+
+  function playerType(game) {
+    if (game.model_label) return game.model_label;
+    if (game.model_color) return "Unidentified LLM";
+    return "Scripted players";
+  }
+
+  function refreshPlayerTypes() {
+    const selected = playerTypeFilter.value;
+    const counts = new Map();
+    games.forEach((game) => {
+      const type = playerType(game);
+      counts.set(type, (counts.get(type) || 0) + 1);
+    });
+
+    const all = new Option(`All player types (${games.length})`, "");
+    const options = [...counts.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([type, typeCount]) => new Option(`${type} (${typeCount})`, type));
+    playerTypeFilter.replaceChildren(all, ...options);
+    if (counts.has(selected)) playerTypeFilter.value = selected;
   }
 
   function pendingCard(name) {
@@ -378,14 +441,19 @@
     grid.replaceChildren();
     failed.forEach((item, i) => grid.append(failedCard(item, i)));
     pending.forEach((name) => grid.append(pendingCard(name)));
-    games.forEach((game) => grid.append(gameCard(game)));
+    const visibleGames = games.filter(
+      (game) => !playerTypeFilter.value || playerType(game) === playerTypeFilter.value,
+    );
+    visibleGames.forEach((game) => grid.append(gameCard(game)));
     if (!grid.children.length) grid.append(emptyState());
-    count.textContent = games.length;
+    count.textContent = visibleGames.length;
+    totalCount.textContent = games.length;
   }
 
   async function refresh() {
     const response = await fetch("/api/replays");
     games = await response.json();
+    refreshPlayerTypes();
     render();
   }
 
@@ -429,6 +497,8 @@
     overlay.classList.remove("on");
     uploadFiles([...event.dataTransfer.files]);
   });
+
+  playerTypeFilter.addEventListener("change", render);
 
   refresh();
 </script>
