@@ -7,7 +7,7 @@ from pathlib import Path
 
 from catanatron.state_functions import get_actual_victory_points
 from flask import jsonify, request, send_file
-from sqlalchemy import func
+from sqlalchemy import Index, func
 
 from catan_llm.determinism import require_fixed_hashseed
 from catan_llm.replay import replay_steps
@@ -18,6 +18,7 @@ INDEX_HTML = Path(__file__).with_name("replay_index.html")
 WATCH_HTML = Path(__file__).with_name("replay_watch.html")
 DEFAULT_DB = ROOT / "data" / "replays.sqlite"
 DEFAULT_METADATA = ROOT / "data" / "replays.models.json"
+REPLAY_LOOKUP_INDEX = "ix_game_states_uuid_state_index"
 
 def display_model_name(model: str | None) -> str | None:
     """Remove a provider prefix while preserving the recorded mode label."""
@@ -42,9 +43,25 @@ def create_server():
     os.environ.setdefault("DATABASE_URL", f"sqlite:///{DEFAULT_DB}")
 
     from catanatron.web import create_app
-    from catanatron.web.models import GameState, database_session, upsert_game_state
+    from catanatron.web.models import GameState, database_session, db, upsert_game_state
 
     app = create_app()
+    with app.app_context():
+        lookup_index = next(
+            (
+                index
+                for index in GameState.__table__.indexes
+                if index.name == REPLAY_LOOKUP_INDEX
+            ),
+            None,
+        )
+        if lookup_index is None:
+            lookup_index = Index(
+                REPLAY_LOOKUP_INDEX,
+                GameState.uuid,
+                GameState.state_index,
+            )
+        lookup_index.create(bind=db.engine, checkfirst=True)
 
     @app.get("/")
     def index():
