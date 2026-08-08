@@ -1,0 +1,11 @@
+{
+  "name": "catan-llm-replays",
+  "compatibility_date": "2026-08-07",
+  "pages_build_output_dir": "../../data/replay_cloudflare/site",
+  "r2_buckets": [
+    {
+      "binding": "REPLAYS",
+      "bucket_name": "catan-llm-replays"
+    }
+  ]
+}

@@ -42,6 +42,16 @@
 
   header { text-align: center; margin-bottom: 28px; }
 
+  .home-link {
+    display: inline-block;
+    margin-bottom: 13px;
+    color: #e3f0fa;
+    font-size: 13px;
+    text-decoration: none;
+  }
+
+  .home-link:hover, .home-link:focus-visible { color: #ffffff; }
+
   h1 {
     font-family: var(--logo);
     font-size: 34px;
@@ -290,6 +300,7 @@
 <body>
 <div class="wrap">
   <header>
+    <a class="home-link" href="/">← catan home</a>
     <h1>CATANATRON</h1>
     <p class="subtitle">REPLAYS</p>
     <div class="filters">
@@ -299,7 +310,7 @@
       </select>
     </div>
     <div class="header-side">
-      <span id="count">0</span> of <span id="total-count">0</span> games shown · drop a trajectory .jsonl anywhere to load it
+      <span id="count">0</span> of <span id="total-count">0</span> games shown<span id="upload-hint"> · drop a trajectory .jsonl anywhere to load it</span>
     </div>
   </header>
   <div class="grid" id="grid"></div>
@@ -318,6 +329,7 @@
   const count = document.getElementById("count");
   const totalCount = document.getElementById("total-count");
   const playerTypeFilter = document.getElementById("player-type-filter");
+  const readOnly = document.querySelector('meta[name="replay-read-only"]')?.content === "true";
   let games = [];
   let pending = [];
   let failed = [];
@@ -331,7 +343,9 @@
 
   function gameCard(game) {
     const card = el("a", "card");
-    card.href = `/replays/${game.game_id}`;
+    card.href = readOnly
+      ? `/replays/watch?game_id=${encodeURIComponent(game.game_id)}`
+      : `/replays/${encodeURIComponent(game.game_id)}`;
     card.target = "_blank";
 
     const top = el("div", "card-top");
@@ -480,23 +494,28 @@
   }
 
   const overlay = document.getElementById("overlay");
-  let dragDepth = 0;
-  window.addEventListener("dragenter", (event) => {
-    event.preventDefault();
-    dragDepth += 1;
-    overlay.classList.add("on");
-  });
-  window.addEventListener("dragleave", () => {
-    dragDepth -= 1;
-    if (dragDepth <= 0) { dragDepth = 0; overlay.classList.remove("on"); }
-  });
-  window.addEventListener("dragover", (event) => event.preventDefault());
-  window.addEventListener("drop", (event) => {
-    event.preventDefault();
-    dragDepth = 0;
-    overlay.classList.remove("on");
-    uploadFiles([...event.dataTransfer.files]);
-  });
+  if (readOnly) {
+    document.getElementById("upload-hint").remove();
+    overlay.remove();
+  } else {
+    let dragDepth = 0;
+    window.addEventListener("dragenter", (event) => {
+      event.preventDefault();
+      dragDepth += 1;
+      overlay.classList.add("on");
+    });
+    window.addEventListener("dragleave", () => {
+      dragDepth -= 1;
+      if (dragDepth <= 0) { dragDepth = 0; overlay.classList.remove("on"); }
+    });
+    window.addEventListener("dragover", (event) => event.preventDefault());
+    window.addEventListener("drop", (event) => {
+      event.preventDefault();
+      dragDepth = 0;
+      overlay.classList.remove("on");
+      uploadFiles([...event.dataTransfer.files]);
+    });
+  }
 
   playerTypeFilter.addEventListener("change", render);
 

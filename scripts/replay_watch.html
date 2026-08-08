@@ -25,7 +25,7 @@
 </head>
 <body>
 <header>
-  <a href="/">← all replays</a>
+  <a id="all-replays" href="/">← all replays</a>
   <div class="identity">
     <h1 id="title">Loading model identity…</h1>
     <p id="details"></p>
@@ -33,18 +33,47 @@
 </header>
 <iframe id="viewer" title="Catan replay"></iframe>
 <script>
-  const gameId = decodeURIComponent(location.pathname.split("/").pop());
-  document.getElementById("viewer").src = `http://localhost:3000/replays/${gameId}`;
+  const gameId = new URLSearchParams(location.search).get("game_id")
+    || decodeURIComponent(location.pathname.split("/").pop());
+  const hostedViewer = document.querySelector('meta[name="replay-viewer-url"]')?.content;
+  if (hostedViewer) document.getElementById("all-replays").href = "/replays";
+  const localHostnames = new Set(["localhost", "127.0.0.1"]);
+  const viewerOrigin = localHostnames.has(location.hostname)
+    ? "http://localhost:3000"
+    : `${location.protocol}//${location.hostname}:3000`;
+  document.getElementById("viewer").src = hostedViewer
+    ? `${hostedViewer.replace(/\/$/, "")}/#/replays/${encodeURIComponent(gameId)}`
+    : `${viewerOrigin}/replays/${encodeURIComponent(gameId)}`;
+
+  function playerSummary(game) {
+    const counts = new Map();
+    (game.seat_kinds || []).filter(Boolean).forEach((kind) => {
+      const label = kind.replaceAll("_", " ");
+      counts.set(label, (counts.get(label) || 0) + 1);
+    });
+    return [...counts].map(([label, amount]) => `${amount}× ${label}`).join(" · ");
+  }
+
   fetch("/api/replays")
-    .then((response) => response.json())
+    .then((response) => {
+      if (!response.ok) throw new Error(`catalog request failed (${response.status})`);
+      return response.json();
+    })
     .then((games) => {
       const game = games.find((entry) => entry.game_id === gameId);
       if (!game) throw new Error("replay metadata not found");
-      const model = game.model_label || "Unidentified LLM";
-      const color = game.model_color || "unknown color";
-      document.title = `${model} — Catan replay`;
-      document.getElementById("title").textContent = `${model} plays ${color}`;
-      document.getElementById("details").textContent = `Seed ${game.seed} · versus three value-function bots · ${game.turns} turns`;
+      const model = game.model_label || (game.model_color ? "Unidentified LLM" : null);
+      const heading = model && game.model_color
+        ? `${model} plays ${game.model_color}`
+        : "Catan game replay";
+      const details = [
+        game.seed === null ? null : `Seed ${game.seed}`,
+        playerSummary(game),
+        `${game.turns} turns`,
+      ].filter(Boolean);
+      document.title = `${heading} — Catan replay`;
+      document.getElementById("title").textContent = heading;
+      document.getElementById("details").textContent = details.join(" · ");
     })
     .catch((error) => {
       document.getElementById("title").textContent = "LLM replay";

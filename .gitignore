@@ -8,6 +8,7 @@ data/
 .env
 outputs/
 wandb/
+.wrangler/
 
 # Generated Prime environment state
 /environments/catan_v1/catan_llm/

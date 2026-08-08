@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Catan LLM</title>
+<meta name="description" content="A post-training research project for agents that play complete games of Catan.">
+<link rel="preconnect" href="https://fonts.gstatic.com">
+<link href="https://fonts.googleapis.com/css2?family=Bungee+Inline&display=block" rel="stylesheet">
+<style>
+  :root {
+    --ink: #ffffff;
+    --muted: #c7d7e3;
+    --panel: #10283ae6;
+    --line: #ffffff24;
+    --blue: #57a8ff;
+    --blue-strong: #2278ff;
+    --sand: #f0c354;
+    --ui: "Roboto", "Helvetica Neue", Arial, sans-serif;
+    --logo: "Bungee Inline", sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background:
+      radial-gradient(circle at 18% 12%, #3aa8dc88 0, transparent 28%),
+      radial-gradient(circle at 78% 30%, #1e7dbb99 0, transparent 34%),
+      linear-gradient(145deg, #0d3857 0%, #176d9e 52%, #0b2c45 100%);
+    color: var(--ink);
+    font-family: var(--ui);
+  }
+
+  a { color: inherit; }
+
+  .shell {
+    width: min(1080px, calc(100% - 40px));
+    margin: 0 auto;
+  }
+
+  nav {
+    min-height: 72px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .wordmark {
+    font-family: var(--logo);
+    font-size: 20px;
+    text-decoration: none;
+    letter-spacing: .02em;
+  }
+
+  .nav-links { display: flex; align-items: center; gap: 22px; }
+  .nav-links a { color: var(--muted); font-size: 14px; text-decoration: none; }
+  .nav-links a:hover, .nav-links a:focus-visible { color: var(--ink); }
+
+  .hero {
+    min-height: 500px;
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(260px, .8fr);
+    align-items: center;
+    gap: 56px;
+    padding: 72px 0 66px;
+  }
+
+  .eyebrow {
+    margin: 0 0 14px;
+    color: #d7efff;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+  }
+
+  h1 {
+    max-width: 720px;
+    margin: 0;
+    font-family: var(--logo);
+    font-size: clamp(45px, 7.2vw, 82px);
+    font-weight: 400;
+    line-height: .98;
+  }
+
+  .lede {
+    max-width: 650px;
+    margin: 24px 0 30px;
+    color: var(--muted);
+    font-size: clamp(17px, 2vw, 20px);
+    line-height: 1.55;
+  }
+
+  .actions { display: flex; flex-wrap: wrap; gap: 12px; }
+
+  .button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 48px;
+    padding: 0 20px;
+    border: 1px solid #ffffff45;
+    border-radius: 9px;
+    background: #ffffff0e;
+    font-size: 14px;
+    font-weight: 800;
+    text-decoration: none;
+  }
+
+  .button.primary { border-color: var(--blue); background: var(--blue-strong); }
+  .button:hover, .button:focus-visible { border-color: #fff; }
+
+  .board-mark {
+    position: relative;
+    width: min(330px, 70vw);
+    aspect-ratio: 1;
+    margin: auto;
+  }
+
+  .hex {
+    position: absolute;
+    width: 42%;
+    aspect-ratio: .88;
+    clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+    background: #ffffff1c;
+    border: 0;
+    filter: drop-shadow(0 14px 18px #05203444);
+  }
+
+  .hex:nth-child(1) { left: 29%; top: 2%; background: #67ad48; }
+  .hex:nth-child(2) { left: 7%; top: 30%; background: var(--sand); }
+  .hex:nth-child(3) { right: 7%; top: 30%; background: #db7250; }
+  .hex:nth-child(4) { left: 29%; bottom: 2%; background: #92b9ca; }
+  .hex.center { left: 29%; top: 29%; background: #163c56; }
+
+  .hex.center::after {
+    content: "C";
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    font-family: var(--logo);
+    font-size: clamp(34px, 8vw, 64px);
+  }
+
+  .section { padding: 72px 0; border-top: 1px solid var(--line); }
+
+  .section-heading { max-width: 650px; margin-bottom: 32px; }
+  .section h2 { margin: 0 0 10px; font-size: clamp(28px, 4vw, 42px); }
+  .section-heading p, .about-copy { margin: 0; color: var(--muted); line-height: 1.65; }
+
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+
+  .card {
+    min-height: 210px;
+    display: flex;
+    flex-direction: column;
+    padding: 24px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--panel);
+    box-shadow: 0 18px 38px #061e2f3d;
+  }
+
+  .card.live { text-decoration: none; }
+  .card.live:hover, .card.live:focus-visible { border-color: var(--blue); }
+  .status { color: var(--blue); font-size: 11px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
+  .status.later { color: #c9d4dc; }
+  .card h3 { margin: 22px 0 9px; font-size: 22px; }
+  .card p { margin: 0; color: var(--muted); font-size: 15px; line-height: 1.55; }
+  .card .go { margin-top: auto; padding-top: 20px; color: var(--blue); font-weight: 800; }
+
+  .about-grid { display: grid; grid-template-columns: .8fr 1.2fr; gap: 48px; }
+  .about-grid h2 { margin: 0; }
+  .about-copy p { margin: 0 0 16px; }
+
+  footer {
+    min-height: 92px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    border-top: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  @media (max-width: 760px) {
+    .shell { width: min(100% - 28px, 1080px); }
+    .nav-links a:not(:last-child) { display: none; }
+    .hero { min-height: auto; grid-template-columns: 1fr; gap: 30px; padding: 60px 0 52px; }
+    .hero-copy { order: 1; }
+    .board-mark { width: 210px; }
+    .cards { grid-template-columns: 1fr; }
+    .card { min-height: 180px; }
+    .about-grid { grid-template-columns: 1fr; gap: 18px; }
+    footer { align-items: flex-start; flex-direction: column; justify-content: center; }
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+  <nav aria-label="Main navigation">
+    <a class="wordmark" href="/">CATAN LLM</a>
+    <div class="nav-links">
+      <a href="#work">Project</a>
+      <a href="#about">About</a>
+      <a href="/replays">Replays</a>
+    </div>
+  </nav>
+
+  <main>
+    <section class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow">Post-training research</p>
+        <h1>Learning to play the whole game.</h1>
+        <p class="lede">A research project for agents that play complete games of Catan. This is the public home for game replays, analysis, and notes on the training pipeline.</p>
+        <div class="actions">
+          <a class="button primary" href="/replays">Browse <span id="replay-count">complete game</span> replays</a>
+          <a class="button" href="#about">About the project</a>
+        </div>
+      </div>
+      <div class="board-mark" aria-hidden="true">
+        <span class="hex"></span><span class="hex"></span><span class="hex"></span><span class="hex"></span><span class="hex center"></span>
+      </div>
+    </section>
+
+    <section class="section" id="work">
+      <div class="section-heading">
+        <h2>Explore the work</h2>
+        <p>The replay browser is live now. Analysis and a clearer training-pipeline walkthrough will live here as they are ready to share.</p>
+      </div>
+      <div class="cards">
+        <a class="card live" href="/replays">
+          <span class="status">Live</span>
+          <h3>Game replays</h3>
+          <p>Filter complete games by player type, judge which are worth watching, and inspect every decision after the game.</p>
+          <span class="go">Open replay browser →</span>
+        </a>
+        <article class="card">
+          <span class="status later">Next</span>
+          <h3>Analysis</h3>
+          <p>Comparisons, failure patterns, evaluation results, and the games that best explain what each model learned.</p>
+        </article>
+        <article class="card">
+          <span class="status later">Next</span>
+          <h3>Training pipeline</h3>
+          <p>How trajectories become training data, how models are post-trained, and how full-game behavior is evaluated.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section about-grid" id="about">
+      <h2>About</h2>
+      <div class="about-copy">
+        <p>During play, agents receive only information a real player is allowed to know. Opponent resources and unplayed development cards remain hidden.</p>
+        <p>The replay viewer is intentionally omniscient because every game shown here is already over: its purpose is post-hoc analysis, not live assistance.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span>Catan LLM · research in progress</span>
+    <a href="/replays">Replay browser</a>
+  </footer>
+</div>
+<script>
+  fetch("/api/replays")
+    .then((response) => response.ok ? response.json() : Promise.reject())
+    .then((games) => {
+      document.getElementById("replay-count").textContent = `${games.length} complete game`;
+    })
+    .catch(() => {});
+</script>
+</body>
+</html>
