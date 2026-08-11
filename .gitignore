@@ -13,3 +13,7 @@ wandb/
 # Generated Prime environment state
 /environments/catan_v1/catan_llm/
 /environments/*/.prime/.env-metadata.json
+
+# Local-only slide deck and inspection sidecars
+catan_llm_technical_overview.pptx
+*.inspect.ndjson
