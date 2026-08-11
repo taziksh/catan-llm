@@ -110,10 +110,15 @@ def group_advantages(rewards: list[float]) -> list[float]:
     return [(reward - baseline) / scale for reward in rewards]
 
 
-def _new_rollout(seed: int, rollout_index: int, run_seed: int) -> Rollout:
+def _new_rollout(
+    seed: int,
+    rollout_index: int,
+    run_seed: int,
+    opponents: Sequence[str] = (OPPONENT_POLICY,) * 3,
+) -> Rollout:
     players = [
         PolicyPlayer(COLORS[0]),
-        *(BOTS[OPPONENT_POLICY](color) for color in COLORS[1:]),
+        *(BOTS[name](color) for name, color in zip(opponents, COLORS[1:], strict=True)),
     ]
     game = Game(players, seed=seed)
     game.id = f"grpo_s{seed}_r{rollout_index}"
@@ -148,9 +153,10 @@ def make_rollouts(
     seeds: Sequence[int],
     group_size: int,
     run_seed: int,
+    opponents: Sequence[str] = (OPPONENT_POLICY,) * 3,
 ) -> list[Rollout]:
     return [
-        _new_rollout(seed, rollout_index, run_seed)
+        _new_rollout(seed, rollout_index, run_seed, opponents)
         for seed in seeds
         for rollout_index in range(group_size)
     ]
