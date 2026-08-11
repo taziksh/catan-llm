@@ -85,6 +85,15 @@ class ModelSampler:
         self.max_prompt_tokens = max_prompt_tokens
         self.stop_ids = stop_token_ids(model, tokenizer)
 
+    def load_adapter(self, adapter_dir) -> None:
+        """The training model always carries the current adapter."""
+
+    def sleep(self) -> None:
+        """The training model owns the GPU for every phase."""
+
+    def wake(self) -> None:
+        """The training model owns the GPU for every phase."""
+
     def __call__(self, user_prompts: list[str]) -> list[SampledCompletion]:
         import torch
 
@@ -113,14 +122,16 @@ class ModelSampler:
             )
         encoded = encoded.to(self.model.device)
         prompt_width = encoded["input_ids"].shape[1]
+        if self.temperature > 0:
+            sampling = {"do_sample": True, "temperature": self.temperature,
+                        "top_k": 0, "top_p": 1.0}
+        else:
+            sampling = {"do_sample": False}
         self.model.eval()
         with torch.inference_mode():
             sequences = self.model.generate(
                 **encoded,
-                do_sample=True,
-                temperature=self.temperature,
-                top_k=0,
-                top_p=1.0,
+                **sampling,
                 max_new_tokens=MAX_NEW_TOKENS,
                 pad_token_id=self.tokenizer.pad_token_id,
                 use_cache=True,
@@ -139,6 +150,125 @@ class ModelSampler:
                 completion_ids = completion_ids[: stops[0] + 1]
             text = self.tokenizer.decode(completion_ids, skip_special_tokens=True)
             sampled.append(SampledCompletion(text, prompt_ids, completion_ids))
+        return sampled
+
+
+class VLLMSampler:
+    """ModelSampler-compatible sampler backed by an in-process vLLM engine.
+
+    Hot-swaps the policy LoRA between updates and sleeps the engine outside
+    rollout phases.
+    """
+
+    def __init__(
+        self,
+        model_path: str,
+        tokenizer,
+        temperature: float,
+        run_seed: int,
+        max_prompt_tokens: int = MAX_PROMPT_TOKENS,
+        gpu_memory_utilization: float = 0.30,
+        max_model_len: int = 8192,
+    ):
+        from types import SimpleNamespace
+
+        from transformers import GenerationConfig
+        from vllm import LLM
+
+        self.llm = LLM(
+            model=model_path,
+            enable_lora=True,
+            max_lora_rank=32,
+            gpu_memory_utilization=gpu_memory_utilization,
+            max_model_len=max_model_len,
+            enable_sleep_mode=True,
+        )
+        self.tokenizer = tokenizer
+        self.temperature = temperature
+        self.run_seed = run_seed
+        self.max_prompt_tokens = max_prompt_tokens
+        generation_config = GenerationConfig.from_pretrained(model_path)
+        self.stop_ids = stop_token_ids(
+            SimpleNamespace(generation_config=generation_config), tokenizer
+        )
+        self.lora_request = None
+        self._lora_version = 0
+        self._calls = 0
+        self._asleep = False
+
+    def load_adapter(self, adapter_dir) -> None:
+        from vllm.lora.request import LoRARequest
+
+        self._lora_version += 1
+        self.lora_request = LoRARequest(
+            f"policy-{self._lora_version}", self._lora_version, str(adapter_dir)
+        )
+
+    def sleep(self) -> None:
+        if not self._asleep:
+            self.llm.sleep(level=1)
+            self._asleep = True
+
+    def wake(self) -> None:
+        if self._asleep:
+            self.llm.wake_up()
+            self._asleep = False
+
+    def __call__(self, user_prompts: list[str]) -> list[SampledCompletion]:
+        from vllm import SamplingParams
+        from vllm.inputs import TokensPrompt
+
+        prompts = [
+            render_prompt(
+                [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt},
+                ],
+                self.tokenizer,
+            )
+            for user_prompt in user_prompts
+        ]
+        prompt_ids = [
+            self.tokenizer(prompt, add_special_tokens=False)["input_ids"]
+            for prompt in prompts
+        ]
+        too_long = [len(ids) for ids in prompt_ids if len(ids) > self.max_prompt_tokens]
+        if too_long:
+            raise RuntimeError(
+                f"prompt has {max(too_long)} tokens; limit is "
+                f"{self.max_prompt_tokens} and truncation is forbidden"
+            )
+        self._calls += 1
+        base_seed = self.run_seed * 1_000_003 + self._calls * 4_099
+        params = [
+            SamplingParams(
+                temperature=self.temperature,
+                top_p=1.0,
+                top_k=-1,
+                max_tokens=MAX_NEW_TOKENS,
+                stop_token_ids=sorted(self.stop_ids),
+                seed=base_seed + index,
+            )
+            for index in range(len(prompt_ids))
+        ]
+        outputs = self.llm.generate(
+            [TokensPrompt(prompt_token_ids=ids) for ids in prompt_ids],
+            params,
+            lora_request=self.lora_request,
+            use_tqdm=False,
+        )
+        sampled = []
+        for ids, request in zip(prompt_ids, outputs, strict=True):
+            completion_output = request.outputs[0]
+            completion_ids = list(completion_output.token_ids)
+            stop_reason = completion_output.stop_reason
+            if (
+                isinstance(stop_reason, int)
+                and (not completion_ids or completion_ids[-1] != stop_reason)
+            ):
+                completion_ids.append(stop_reason)
+            text = self.tokenizer.decode(completion_ids, skip_special_tokens=True)
+            sampled.append(SampledCompletion(text, list(ids), completion_ids))
         return sampled
 
 
@@ -308,6 +438,7 @@ def run_config(args) -> dict:
         "groups_per_update": args.groups_per_update,
         "group_size": args.group_size,
         "games_total": args.updates * args.groups_per_update * args.group_size,
+        "sampler": args.sampler,
         "temperature": args.temperature,
         "top_p": 1.0,
         "top_k": 0,
@@ -565,7 +696,15 @@ def run(args) -> dict:
             config=run_config(args),
         )
 
-    sampler = ModelSampler(model, tokenizer, args.temperature, args.max_prompt_tokens)
+    if args.sampler == "vllm":
+        sampler = VLLMSampler(
+            args.model, tokenizer, args.temperature, args.seed, args.max_prompt_tokens
+        )
+        sampler.load_adapter(_adapter_file(adapter_path).parent)
+    else:
+        sampler = ModelSampler(
+            model, tokenizer, args.temperature, args.max_prompt_tokens
+        )
     manifest_path = args.output / "run_manifest.json"
     if args.resume_from is not None:
         if not manifest_path.exists():
@@ -608,6 +747,7 @@ def run(args) -> dict:
             )
             rollouts = make_rollouts(batch_seeds, args.group_size, args.seed)
             rollout_started = time.time()
+            sampler.wake()
             rollout_games(
                 rollouts,
                 sampler,
@@ -615,6 +755,7 @@ def run(args) -> dict:
                 max_turns=args.max_turns,
                 vp_coef=args.vp_coef,
             )
+            sampler.sleep()
             rollout_seconds = time.time() - rollout_started
             group_stats = assign_group_advantages(rollouts)
             trainable = trainable_samples(rollouts)
@@ -640,6 +781,7 @@ def run(args) -> dict:
 
             checkpoint_started = time.time()
             checkpoint = save_update(model, optimizer, args.output, update + 1)
+            sampler.load_adapter(_adapter_file(checkpoint).parent)
             checkpoint_seconds = time.time() - checkpoint_started
             phase_seconds = {
                 "rollout": rollout_seconds,
@@ -749,6 +891,12 @@ def parse_args():
         type=int,
         default=8,
         help="decisions per padded forward in the log-prob and policy passes",
+    )
+    parser.add_argument(
+        "--sampler",
+        choices=("inprocess", "vllm"),
+        default="inprocess",
+        help="rollout completion backend",
     )
     parser.add_argument(
         "--wandb-run",

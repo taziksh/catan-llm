@@ -112,6 +112,7 @@ def _args(tmp_path, **overrides):
         "max_turns": 500,
         "vp_coef": 0.1,
         "max_prompt_tokens": 8192,
+        "sampler": "inprocess",
     }
     values.update(overrides)
     return Namespace(**values)
