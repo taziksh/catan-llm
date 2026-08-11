@@ -380,6 +380,25 @@ def save_checkpoint(model, output: Path, steps: int) -> Path:
     return path
 
 
+def run_config(args) -> dict:
+    return {
+        "k": args.k,
+        "scenarios": args.scenarios,
+        "temperature": args.temperature,
+        "beta_kl": args.beta_kl,
+        "lr": args.lr,
+        "seed": args.seed,
+        "states_per_step": STATES_PER_STEP,
+        "max_new_tokens": MAX_NEW_TOKENS,
+        "grad_clip_norm": GRAD_CLIP_NORM,
+        "max_states": args.max_states,
+        "max_steps": args.max_steps,
+        "checkpoint_every": args.checkpoint_every,
+        "hero_policy": HERO_POLICY,
+        "opponent_policy": OPPONENT_POLICY,
+    }
+
+
 def _mean(values: list[float]) -> float | None:
     return sum(values) / len(values) if values else None
 
@@ -465,17 +484,63 @@ def run(args) -> dict:
     kl_values = []
     loss_values = []
     unique_counts = []
+    win_share_values = []
     identity = []
+    logged = 0
+
+    wandb_run = None
+    if args.wandb_run:
+        import wandb
+
+        wandb_run = wandb.init(
+            project="catan-llm",
+            name=args.wandb_run,
+            group="grpo",
+            job_type="train",
+            config=run_config(args),
+        )
 
     def optimizer_step():
-        nonlocal steps, pending
+        nonlocal steps, pending, logged
         torch.nn.utils.clip_grad_norm_(trainable, GRAD_CLIP_NORM)
         optimizer.step()
         optimizer.zero_grad()
         steps += 1
         pending = 0
+        if wandb_run is not None:
+            reward_window = _mean(group_means[logged:])
+            win_share_window = _mean(win_share_values[logged:])
+            wandb_run.log(
+                {
+                    "loss_mean": _mean(loss_values[logged:]),
+                    "kl_mean": _mean(kl_values[logged:]),
+                    "group_reward_mean": reward_window,
+                    "win_share": win_share_window,
+                    "vp_contribution": reward_window - 1.1 * win_share_window,
+                    "mean_unique_actions": _mean(
+                        [float(count) for count in unique_counts[logged:]]
+                    ),
+                    "states_seen": states_seen,
+                    "degenerate_groups": degenerate_groups,
+                    "invalid_rate": invalid_samples / max(samples_total, 1),
+                    "cache_hit_rate": cache_hits
+                    / max(cache_hits + cache_misses, 1),
+                },
+                step=steps,
+            )
+            logged = len(loss_values)
         if steps % args.checkpoint_every == 0:
-            save_checkpoint(model, args.output, steps)
+            path = save_checkpoint(model, args.output, steps)
+            if wandb_run is not None:
+                import wandb
+
+                artifact = wandb.Artifact(
+                    f"{args.wandb_run}-adapter",
+                    type="model",
+                    metadata={"step": steps},
+                )
+                artifact.add_dir(str(path))
+                wandb_run.log_artifact(artifact)
 
     optimizer.zero_grad()
     try:
@@ -534,10 +599,22 @@ def run(args) -> dict:
                 )
             (loss / STATES_PER_STEP).backward()
 
+            wins = [
+                sum(
+                    cache[(game_id, decision.i, moves[parsed], seed)]["won"]
+                    for seed in seeds
+                )
+                / len(seeds)
+                if parsed is not None
+                else 0.0
+                for parsed in parses
+            ]
+
             pending += 1
             identity.append([game_id, decision.i])
             reward_values.extend(rewards)
             group_means.append(sum(rewards) / len(rewards))
+            win_share_values.append(sum(wins) / len(wins))
             kl_values.append(kl.mean().item())
             loss_values.append(loss.item())
             unique_counts.append(len(unique))
@@ -584,22 +661,7 @@ def run(args) -> dict:
         "states": str(args.states),
         "cache": str(args.cache),
         "cache_sha256": sha256(args.cache),
-        "config": {
-            "k": args.k,
-            "scenarios": args.scenarios,
-            "temperature": args.temperature,
-            "beta_kl": args.beta_kl,
-            "lr": args.lr,
-            "seed": args.seed,
-            "states_per_step": STATES_PER_STEP,
-            "max_new_tokens": MAX_NEW_TOKENS,
-            "grad_clip_norm": GRAD_CLIP_NORM,
-            "max_states": args.max_states,
-            "max_steps": args.max_steps,
-            "checkpoint_every": args.checkpoint_every,
-            "hero_policy": HERO_POLICY,
-            "opponent_policy": OPPONENT_POLICY,
-        },
+        "config": run_config(args),
         "kernels": kernels,
         "packages": package_versions(),
         "gpu": torch.cuda.get_device_name(0),
@@ -626,6 +688,7 @@ def run(args) -> dict:
                 "reward_min": min(reward_values),
                 "reward_max": max(reward_values),
                 "group_reward_mean": _mean(group_means),
+                "win_share_mean": _mean(win_share_values),
                 "kl_mean": _mean(kl_values),
                 "loss_mean": _mean(loss_values),
                 "mean_unique_actions": _mean([float(count) for count in unique_counts]),
@@ -636,6 +699,11 @@ def run(args) -> dict:
         "adapter_sha256": sha256(adapter_file),
     }
     write_manifest(args.output / "run_manifest.json", manifest)
+    if wandb_run is not None:
+        wandb_run.summary.update(manifest["epoch_stats"][0])
+        wandb_run.summary["invalid_rate"] = manifest["invalid_rate"]
+        wandb_run.summary["degenerate_rate"] = manifest["degenerate_rate"]
+        wandb_run.finish()
     return manifest
 
 
@@ -661,6 +729,9 @@ def parse_args():
     parser.add_argument("--lr", type=float, default=DEFAULT_LR)
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--reward-workers", type=int, default=8)
+    parser.add_argument(
+        "--wandb-run", help="wandb run name in the catan-llm project"
+    )
     parser.add_argument(
         "--checkpoint-every", type=int, default=DEFAULT_CHECKPOINT_EVERY
     )
