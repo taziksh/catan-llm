@@ -8,6 +8,12 @@ from catanatron.players.search import VictoryPointPlayer
 from catanatron.players.value import CONTENDER_WEIGHTS, ValueFunctionPlayer
 from catanatron.players.weighted_random import WeightedRandomPlayer
 
+def _rollout(color, scenarios):
+    from catan_llm.rollout_player import RolloutPlayer
+
+    return RolloutPlayer(color, scenarios=scenarios)
+
+
 def _tagged(name, factory):
     def make(color):
         player = factory(color)
@@ -27,6 +33,8 @@ _FACTORIES = {
     "alpha_beta_prunned": lambda color: AlphaBetaPlayer(color, prunning=True),
     "alpha_beta_contender": lambda color: AlphaBetaPlayer(color, params=CONTENDER_WEIGHTS),
     "value_function_contender": lambda color: ValueFunctionPlayer(color, params=CONTENDER_WEIGHTS),
+    "rollout_8": lambda color: _rollout(color, 8),
+    "rollout_32": lambda color: _rollout(color, 32),
     "greedy_playouts_100": lambda color: GreedyPlayoutsPlayer(color, num_playouts=100),
     "mcts_100": lambda color: MCTSPlayer(color, num_simulations=100),
     "mcts_500": lambda color: MCTSPlayer(color, num_simulations=500),
