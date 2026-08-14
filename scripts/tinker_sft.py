@@ -45,6 +45,7 @@ def main():
     parser.add_argument("--eval-every", type=int, required=True)
     parser.add_argument("--save-every", type=int, required=True)
     parser.add_argument("--test-size", type=int, required=True)
+    parser.add_argument("--load-checkpoint", default=None, help="tinker:// state path to resume from")
     parser.add_argument("--rank", type=int, default=32)
     parser.add_argument("--lr", type=float, default=2e-4)
     parser.add_argument("--epochs", type=int, default=1)
@@ -79,6 +80,7 @@ def main():
             "eval_every": args.eval_every,
             "wandb_project": "catan-llm",
             "wandb_name": args.run_name,
+            **({"load_checkpoint_path": args.load_checkpoint} if args.load_checkpoint else {}),
         }
     ).make()
     cli_utils.check_log_dir(config.log_path, behavior_if_exists="raise")
