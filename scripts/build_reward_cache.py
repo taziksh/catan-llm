@@ -27,14 +27,13 @@ from catan_llm.extract import to_action
 from catan_llm.replay import ReplayedDecision, replay_model_decisions
 from catan_llm.schema import GameRecord, Player
 from catan_llm.serialize import move_id
-from catan_llm.simulation import GameOutcome, rollout_action
+from catan_llm.simulation import playout_reward, rollout_action
 from run_dpo import sha256
 
 DEFAULT_SCENARIOS = 8
 DEFAULT_SEED = 42
 HERO_POLICY = "alpha_beta"
 OPPONENT_POLICY = "value_function"
-VP_CAP = 10
 VAL_EVERY = 10
 
 
@@ -88,12 +87,6 @@ def scenario_seeds(seed: int, game_id: str, decision: int, count: int) -> list[i
 def continuation_seed(scenario_seed: int) -> int:
     """Continuation-stream seed, domain-separated from the world sampling."""
     return random.Random(f"{scenario_seed}:continuation").getrandbits(63)
-
-
-def continuation_reward(outcome: GameOutcome, hero: Player) -> float:
-    """Project reward: won + 0.1 * min(vp, 10) / 10. Truncation keeps the VP term."""
-    won = outcome.winner == hero
-    return float(won) + 0.1 * min(outcome.victory_points[hero], VP_CAP) / VP_CAP
 
 
 def row_key(row: dict) -> tuple:
@@ -161,7 +154,7 @@ def score_moves(
                     "hero_vp": outcome.victory_points[hero],
                     "truncated": outcome.truncated,
                     "turns": outcome.turns,
-                    "reward": continuation_reward(outcome, hero),
+                    "reward": playout_reward(outcome, hero),
                 }
             )
     return rows

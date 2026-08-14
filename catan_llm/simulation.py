@@ -69,6 +69,15 @@ def game_outcome(game: Game) -> GameOutcome:
     )
 
 
+VP_CAP = 10
+
+
+def playout_reward(outcome: GameOutcome, hero: Player) -> float:
+    """Score one playout for the hero: won + 0.1 * min(vp, 10) / 10."""
+    won = outcome.winner == hero
+    return float(won) + 0.1 * min(outcome.victory_points[hero], VP_CAP) / VP_CAP
+
+
 def detached_game_copy(game: Game) -> Game:
     """Copy a game without sharing its RNG stream or player list."""
     copied = game.copy()
