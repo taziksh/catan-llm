@@ -31,8 +31,12 @@ _FACTORIES = {
     "alpha_beta_d3": lambda color: AlphaBetaPlayer(color, depth=3),
     "alpha_beta_d4": lambda color: AlphaBetaPlayer(color, depth=4),
     "alpha_beta_prunned": lambda color: AlphaBetaPlayer(color, prunning=True),
-    "alpha_beta_contender": lambda color: AlphaBetaPlayer(color, params=CONTENDER_WEIGHTS),
-    "value_function_contender": lambda color: ValueFunctionPlayer(color, params=CONTENDER_WEIGHTS),
+    "alpha_beta_contender": lambda color: AlphaBetaPlayer(
+        color, value_fn_builder_name="C", params=CONTENDER_WEIGHTS
+    ),
+    "value_function_contender": lambda color: ValueFunctionPlayer(
+        color, "C", params=CONTENDER_WEIGHTS
+    ),
     "rollout_8": lambda color: _rollout(color, 8),
     "rollout_32": lambda color: _rollout(color, 32),
     "greedy_playouts_100": lambda color: GreedyPlayoutsPlayer(color, num_playouts=100),
