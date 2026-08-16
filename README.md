@@ -284,6 +284,8 @@ we choose alpha_beta, as it was the strongest policy
 
 ![scripted-bot anchor win rates](assets/anchors_winrate.png)
 
+Note: rollout plays the move with the best average result over 8 playouts.
+
 #### step 1: generate trajectories
 
 From some early experiments, each game has 50-70 decisions. We logged ~9k games for ~364k decision samples. Each of our training sets consist of whole games only; i.e. we split at the game boundaries.
@@ -395,6 +397,8 @@ We must now decide:
 Rn our output format is quite brittle, and might be constraining what the model learns during fine tuning. Concretely, the model sees responses of the form "answer: 3".
 
 The model might be learning to predict numbers without attending to the relevant move. To prevent this from happening, it might be worth adding natural language information *about* the move. e.g. "answer: 3. buy house."
+
+We tried this by retraining on the same 1k samples with the answer rewritten to repeat the move's whole line from the prompt, e.g. "answer: settlement:16 (adjacent: brick-5, ore-4)". Teacher agreement on held-out decisions was 32.8% for plain answers and 29.9% for enriched ones, so we found no improvement and dropped the idea.
 
 Additionally, to prevent the model from overfitting to the position/index, we can shuffle the numbers. I'm not sure what the net effect on this would be, since I can also see shuffling, esp for smaller models, leading to more confusion. Perhaps this needs to be resolved empirically.
 
@@ -518,6 +522,8 @@ The reward is periodic, and the net integral is ~0.
 
 On held-out games we find that our GRPO model wins 4/100, compared to the DPO baseline's 3/100 (no statistical difference).
 
+We scored the same decisions a second time (i.e. 8 fresh rollouts per move) and a different move came out 31 2/3 of the time. This suggests that the "rewards" were mostly luck (dice).
+
 ### limitations of imitation
 
 How well did both the teacher and the student do, against the best possible move? We define this "regret" and measure it by letting a scripted policy start from the move and play out 8 samples of the game. Each playout scores 0 for a loss and 1 for a win, and a move's value is the average over its 8 playouts.
@@ -543,7 +549,7 @@ here are the other credits i had to pay for:
 | anthropic | $30 | out of pocket |
 | openrouter | check usage dates+amt | out of pocket |
 | xiaomi | $4 | out of pocket |
-| runpod | $90 | out of pocket |
+| runpod | $120 | out of pocket |
 | openai | $15 + prev credit balance | out of pocket |
 | moonshot | $10 | out of pocket |
 
