@@ -14,6 +14,12 @@ def _rollout(color, scenarios):
     return RolloutPlayer(color, scenarios=scenarios)
 
 
+def _value_model(color, worlds):
+    from catan_llm.value_model_player import ValueModelPlayer
+
+    return ValueModelPlayer(color, worlds=worlds)
+
+
 def _tagged(name, factory):
     def make(color):
         player = factory(color)
@@ -39,6 +45,7 @@ _FACTORIES = {
     ),
     "rollout_8": lambda color: _rollout(color, 8),
     "rollout_32": lambda color: _rollout(color, 32),
+    "value_model_16": lambda color: _value_model(color, 16),
     "greedy_playouts_100": lambda color: GreedyPlayoutsPlayer(color, num_playouts=100),
     "mcts_100": lambda color: MCTSPlayer(color, num_simulations=100),
     "mcts_500": lambda color: MCTSPlayer(color, num_simulations=500),
