@@ -2,7 +2,6 @@
 
 import argparse
 import json
-import random
 import sys
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -15,32 +14,15 @@ from scipy.stats import spearmanr
 sys.path.insert(0, str(Path(__file__).parent))
 from build_reward_cache import continuation_seed, hero_color, playable_move_ids, scenario_seeds
 
-from catanatron.features import create_sample_vector
 from catan_llm.determinism import require_fixed_hashseed
 from catan_llm.determinize import determinize
 from catan_llm.extract import to_action
 from catan_llm.replay import replay_model_decisions
 from catan_llm.schema import Player
 from catan_llm.serialize import move_id
-from catan_llm.simulation import detached_game_copy
+from catan_llm.value_model_player import afterstate_features
 
 MARGIN_BINS = [0.005, 0.01, 0.02, 0.05, 0.1]
-
-
-def afterstate_features(world, move_index, future_seed, hero_index, turn):
-    afterstate = detached_game_copy(world)
-    rng = random.Random(future_seed)
-    afterstate.random = rng
-    afterstate.state.random = rng
-    afterstate.execute(afterstate.playable_actions[move_index])
-    hero = afterstate.state.colors[hero_index]
-    row = create_sample_vector(afterstate, hero)
-    row += [
-        float(hero_index),
-        float(turn),
-        float(afterstate.state.current_color() == hero),
-    ]
-    return row
 
 
 def rank_game(path, model_path, seed, worlds):
