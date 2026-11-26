@@ -5,6 +5,8 @@ finetunes), or ``--renderer hf`` to use the tokenizer's own chat template with
 its defaults (thinking on for GLM / Kimi). In hf mode a ``<think>...</think>``
 block is returned as ``reasoning_content`` and only the text after it as
 ``content``, matching how hosted thinking models appear to the harness.
+The ``tml_v0`` renderer (Inkling) is split the same way using the renderer's own
+parser, and takes ``--effort`` for its reasoning-effort conditioning.
 """
 
 import argparse
@@ -19,8 +21,6 @@ from tinker import types
 from tinker_cookbook import renderers
 from tinker_cookbook.tokenizer_utils import get_tokenizer
 
-CONTEXT_LIMIT = 16384
-REQUEST_TIMEOUT = 1200
 
 
 def main():
@@ -35,6 +35,14 @@ def main():
         "--template-kwargs",
         default="{}",
         help='JSON kwargs for apply_chat_template (hf mode), e.g. {"reasoning_effort": "low"} or {"thinking": false}',
+    )
+    parser.add_argument("--effort", type=float, default=None, help="tml_v0 reasoning effort in [0, 1)")
+    parser.add_argument("--context-limit", type=int, default=16384, help="prompt + completion token cap")
+    parser.add_argument(
+        "--request-timeout",
+        type=float,
+        default=1200,
+        help="runaway guard in seconds; keep above a full-cap completion at the slowest observed speed",
     )
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args()
@@ -101,12 +109,33 @@ def main():
         stop_strings = [tokenizer.decode([s]) for s in stop_ids]
         stop_strings += [s for s in renderer.get_stop_sequences() if isinstance(s, str)]
         build_prompt = renderer.build_generation_prompt
+        if args.renderer == "tml_v0":
+
+            def build_prompt(messages):
+                return renderer.build_generation_prompt(messages, effort=args.effort)
+
+    def split_reasoning(tokens):
+        """Returns (reasoning, content) for a sampled completion."""
+        if args.renderer == "tml_v0":
+            message, _ = renderer.parse_response(tokens)
+            if isinstance(message["content"], str):
+                return "", message["content"]
+            parts = message["content"]
+            reasoning = "\n".join(p["thinking"] for p in parts if p["type"] == "thinking")
+            return reasoning, "".join(p["text"] for p in parts if p["type"] == "text")
+        text = tokenizer.decode(tokens)
+        for stop in stop_strings:
+            text = text.split(stop)[0]
+        reasoning, sep, content = text.rpartition("</think>")
+        if not sep:
+            reasoning, content = "", text
+        return reasoning.removeprefix("<think>"), content
 
     async def chat_completions(request):
         body = await request.json()
         prompt = build_prompt(body["messages"])
         prompt_tokens = len(prompt.to_ints())
-        max_tokens = min(body.get("max_tokens") or CONTEXT_LIMIT, CONTEXT_LIMIT - prompt_tokens)
+        max_tokens = min(body.get("max_tokens") or args.context_limit, args.context_limit - prompt_tokens)
         params = types.SamplingParams(
             max_tokens=max_tokens,
             temperature=body.get("temperature", 0.0),
@@ -119,11 +148,11 @@ def main():
         )
         session.tasks.add(task)
         try:
-            result = await asyncio.wait_for(task, timeout=REQUEST_TIMEOUT)
+            result = await asyncio.wait_for(task, timeout=args.request_timeout)
         except asyncio.CancelledError:
             return web.json_response({"error": {"message": "session replaced"}}, status=503)
         except asyncio.TimeoutError:
-            print(f"{time.strftime('%H:%M:%S')} sample timed out after {REQUEST_TIMEOUT}s", flush=True)
+            print(f"{time.strftime('%H:%M:%S')} sample timed out after {args.request_timeout}s", flush=True)
             return web.json_response({"error": {"message": "sample timed out"}}, status=503)
         except Exception as e:
             session.kill(f"{type(e).__name__}: {str(e)[:120]}")
@@ -131,13 +160,8 @@ def main():
         finally:
             session.tasks.discard(task)
         sequence = result.sequences[0]
-        text = tokenizer.decode(sequence.tokens)
-        for stop in stop_strings:
-            text = text.split(stop)[0]
-        reasoning, sep, content = text.rpartition("</think>")
-        if not sep:
-            reasoning, content = "", text
-        reasoning = reasoning.removeprefix("<think>").strip()
+        reasoning, content = split_reasoning(sequence.tokens)
+        reasoning = reasoning.strip()
         message = {"role": "assistant", "content": content.strip()}
         if reasoning:
             message["reasoning_content"] = reasoning
