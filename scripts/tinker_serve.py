@@ -5,12 +5,17 @@ finetunes), or ``--renderer hf`` to use the tokenizer's own chat template with
 its defaults (thinking on for GLM / Kimi). In hf mode a ``<think>...</think>``
 block is returned as ``reasoning_content`` and only the text after it as
 ``content``, matching how hosted thinking models appear to the harness.
-The ``tml_v0`` renderer (Inkling) is split the same way using the renderer's own
-parser, and takes ``--effort`` for its reasoning-effort conditioning.
+
+Thinking models served through a cookbook renderer mark reasoning in their own
+format (Inkling's thinking parts, gpt-oss's analysis channel, ...); pass
+``--parse-reasoning`` to split it out with the renderer's own parser instead.
+The ``tml_v0`` renderer (Inkling) also takes ``--effort`` for its
+reasoning-effort conditioning.
 """
 
 import argparse
 import asyncio
+import functools
 import json
 import logging
 import time
@@ -21,6 +26,26 @@ from tinker import types
 from tinker_cookbook import renderers
 from tinker_cookbook.tokenizer_utils import get_tokenizer
 
+
+def split_message(message):
+    """Splits a renderer-parsed assistant message into (reasoning, content).
+
+    Args:
+        message: The message returned by a cookbook renderer's
+            ``parse_response``. Its content is either a list of typed parts
+            (``thinking`` / ``text`` / others) or a plain string that may hold
+            a ``<think>...</think>`` block.
+
+    Returns:
+        The reasoning text and the answer text; reasoning is empty when the
+        model produced none.
+    """
+    content = message["content"]
+    if isinstance(content, str):
+        reasoning, sep, text = content.rpartition("</think>")
+        return (reasoning.removeprefix("<think>"), text) if sep else ("", content)
+    reasoning = "\n".join(p["thinking"] for p in content if p["type"] == "thinking")
+    return reasoning, "".join(p["text"] for p in content if p["type"] == "text")
 
 
 def main():
@@ -35,6 +60,11 @@ def main():
         "--template-kwargs",
         default="{}",
         help='JSON kwargs for apply_chat_template (hf mode), e.g. {"reasoning_effort": "low"} or {"thinking": false}',
+    )
+    parser.add_argument(
+        "--parse-reasoning",
+        action="store_true",
+        help="split reasoning from the answer with the cookbook renderer's own parser",
     )
     parser.add_argument("--effort", type=float, default=None, help="tml_v0 reasoning effort in [0, 1)")
     parser.add_argument("--context-limit", type=int, default=16384, help="prompt + completion token cap")
@@ -110,19 +140,13 @@ def main():
         stop_strings += [s for s in renderer.get_stop_sequences() if isinstance(s, str)]
         build_prompt = renderer.build_generation_prompt
         if args.renderer == "tml_v0":
-
-            def build_prompt(messages):
-                return renderer.build_generation_prompt(messages, effort=args.effort)
+            build_prompt = functools.partial(build_prompt, effort=args.effort)
 
     def split_reasoning(tokens):
         """Returns (reasoning, content) for a sampled completion."""
-        if args.renderer == "tml_v0":
+        if args.parse_reasoning:
             message, _ = renderer.parse_response(tokens)
-            if isinstance(message["content"], str):
-                return "", message["content"]
-            parts = message["content"]
-            reasoning = "\n".join(p["thinking"] for p in parts if p["type"] == "thinking")
-            return reasoning, "".join(p["text"] for p in parts if p["type"] == "text")
+            return split_message(message)
         text = tokenizer.decode(tokens)
         for stop in stop_strings:
             text = text.split(stop)[0]

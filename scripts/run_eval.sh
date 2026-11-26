@@ -23,12 +23,13 @@ case "$row" in
   mimo-*)     model="mimo-v2.5-pro"; url="https://api.xiaomimimo.com/v1"; key="XIAOMI_API_KEY" ;;
   sonnet-*)   model="claude-sonnet-5"; url="https://api.anthropic.com/v1"; key="ANTHROPIC_API_KEY" ;;
   luna-*)     model="gpt-5.6-luna"; url="https://api.openai.com/v1"; key="OPENAI_API_KEY" ;;
-  # Free Tinker variant behind the local shim; start it first (effort is pinned there):
-  #   uv run python scripts/tinker_serve.py --base-model thinkingmachines/Inkling-2-Mini:peft:65536:free \
-  #     --tokenizer thinkingmachines/Inkling-2-Mini --renderer tml_v0 --effort 0.0 \
-  #     --context-limit 65536 --request-timeout 3600 \
-  #     --served-name inkling2-mini --port 8011
-  inkling-*)  model="inkling2-mini"; url="http://localhost:8011/v1"; key="VLLM_API_KEY"; export VLLM_API_KEY=local ;;
+  # Tinker-served rows: start the shim first with scripts/serve_tinker_row.sh ROW.
+  inkling-*)      model="inkling2-mini"; url="http://localhost:8011/v1"; key="VLLM_API_KEY" ;;
+  inklingsmall-*) model="inkling2-small"; url="http://localhost:8025/v1"; key="VLLM_API_KEY" ;;
+  gptoss-*)       model="gpt-oss-120b"; url="http://localhost:8026/v1"; key="VLLM_API_KEY" ;;
+  qwen397b-*)     model="qwen3.5-397b"; url="http://localhost:8022/v1"; key="VLLM_API_KEY" ;;
+  qwen27b-*)      model="qwen3.8-27b"; url="http://localhost:8023/v1"; key="VLLM_API_KEY" ;;
+  kimi26-*)       model="kimi-k2.6"; url="http://localhost:8024/v1"; key="VLLM_API_KEY" ;;
   *) echo "unknown row: $row" >&2; exit 1 ;;
 esac
 
@@ -44,12 +45,16 @@ type = "disabled"' ;;
   sonnet-think|luna-think) sampling='[sampling]
 reasoning_effort = "medium"' ;;
   # Greedy decoding loops on opening placements until the cap; 1.0 matches hosted thinking defaults.
-  inkling-low) sampling='[sampling]
+  inkling-low|inklingsmall-low|gptoss-medium|qwen397b-think|qwen27b-medium|kimi26-think) sampling='[sampling]
 temperature = 1.0' ;;
   luna-nt) sampling='[sampling]
 reasoning_effort = "none"' ;;
   *) echo "unknown row: $row" >&2; exit 1 ;;
 esac
+
+if [ "$key" = VLLM_API_KEY ]; then
+  export VLLM_API_KEY=local  # the local shim ignores it; the client requires one
+fi
 
 cfg=$(mktemp -t "catan_eval_${row}").toml
 cat > "$cfg" <<EOF
