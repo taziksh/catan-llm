@@ -56,7 +56,7 @@ if [ "$key" = VLLM_API_KEY ]; then
   export VLLM_API_KEY=local  # the local shim ignores it; the client requires one
 fi
 
-cfg=$(mktemp -t "catan_eval_${row}").toml
+cfg=$(mktemp "${TMPDIR:-/tmp}/catan_eval_${row}.XXXXXX").toml
 cat > "$cfg" <<EOF
 model = "$model"
 num_tasks = $n
